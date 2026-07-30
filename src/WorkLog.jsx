@@ -12,11 +12,9 @@ import {
 } from "lucide-react";
 
 const STORAGE_KEY = "workLogEntries";
-const STORAGE_KEY_TARGET = "workLogSalesTarget";
 const PRESET_TAGS = ["日赤", "日赤夜", "寝台", "宿直", "横関", "横関夜", "早出", "明け", "点検書類提出"];
 const WEEKDAY_JA = ["日", "月", "火", "水", "木", "金", "土"];
 const FIRST_WORKDAY = "2024-12-22";
-const DEFAULT_SALES_TARGET = 75000;
 const DAY_STATUS = {
   WORKDAY: "workday",
   DAYOFF: "dayoff",
@@ -162,24 +160,8 @@ function persistEntries(entries) {
     return false;
   }
 }
-function loadSalesTarget() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_TARGET);
-    const parsed = Number(raw);
-    return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_SALES_TARGET;
-  } catch (e) {
-    console.error("目標読み込みエラー", e);
-    return DEFAULT_SALES_TARGET;
-  }
-}
-function persistSalesTarget(value) {
-  try {
-    localStorage.setItem(STORAGE_KEY_TARGET, String(value));
-    return true;
-  } catch (e) {
-    console.error("目標保存エラー", e);
-    return false;
-  }
+function getSalesTargetForWeekday(weekday) {
+  return weekday === "金" || weekday === "土" ? 70000 : 60000;
 }
 
 const emptyForm = (date) => ({
@@ -229,8 +211,6 @@ export default function WorkLog() {
   const [selectedDate, setSelectedDate] = useState(todayISO());
   const [form, setForm] = useState(emptyForm(todayISO()));
   const [periodAnchor, setPeriodAnchor] = useState(todayISO());
-  const [salesTarget, setSalesTarget] = useState(() => loadSalesTarget());
-  const [salesTargetInput, setSalesTargetInput] = useState(() => String(loadSalesTarget()));
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [toast, setToast] = useState(null);
   const dateInputRef = useRef(null);
@@ -278,14 +258,6 @@ export default function WorkLog() {
     const today = todayISO();
     setSelectedDate(today);
     setPeriodAnchor(today);
-  };
-
-  const handleSaveSalesTarget = () => {
-    const nextValue = Math.max(0, Number(salesTargetInput) || 0);
-    setSalesTarget(nextValue);
-    setSalesTargetInput(String(nextValue));
-    persistSalesTarget(nextValue);
-    showToast(`売上目標を${nextValue.toLocaleString("ja-JP")}円に設定しました`);
   };
 
   const updateField = (key, value) => {
@@ -416,8 +388,9 @@ export default function WorkLog() {
   const statusLabel = getStatusLabel(effectiveStatus);
   const currentSalesTotal = (Number(form.sales) || 0) + (Number(form.salesExtra) || 0);
   const totalSales = currentSalesTotal;
-  const targetRemaining = Math.max(salesTarget - currentSalesTotal, 0);
-  const achievementRate = salesTarget > 0 ? (currentSalesTotal / salesTarget) * 100 : 0;
+  const weekdayTarget = getSalesTargetForWeekday(wd);
+  const targetRemaining = currentSalesTotal >= weekdayTarget ? 0 : Math.max(weekdayTarget - currentSalesTotal, 0);
+  const achievementRate = weekdayTarget > 0 ? (currentSalesTotal / weekdayTarget) * 100 : 0;
   const activeTags = form.notes ? form.notes.split(/[\s、,　]+/).filter(Boolean) : [];
   const periodStartLbl = fmtDateLabel(periodBounds.start);
   const periodEndLbl = fmtDateLabel(periodBounds.end);
@@ -517,27 +490,9 @@ export default function WorkLog() {
 
         {isWorkday ? (
           <div className="mx-5 mt-3 rounded-2xl border border-[#232A36] bg-[#171C24] px-4 py-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-[10px] tracking-[0.2em] text-[#7C8496] font-meter">売上目標</div>
-                <div className="font-medium text-[#EDEFF3] mt-1">目標 ¥{yen(salesTarget)}</div>
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  value={salesTargetInput}
-                  onChange={(e) => setSalesTargetInput(e.target.value)}
-                  className="w-24 rounded-lg border border-[#2A3140] bg-[#181D25] px-2 py-2 text-sm text-[#EDEFF3] focus:outline-none focus:border-[#FFB454]"
-                  placeholder="75000"
-                />
-                <button
-                  onClick={handleSaveSalesTarget}
-                  className="rounded-lg border border-[#2A3140] px-2.5 py-2 text-[12px] text-[#C0C8D4] active:border-[#FFB454] active:text-[#FFB454]"
-                >
-                  保存
-                </button>
-              </div>
+            <div>
+              <div className="text-[10px] tracking-[0.2em] text-[#7C8496] font-meter">売上目標</div>
+              <div className="font-medium text-[#EDEFF3] mt-1">目標 ¥{yen(weekdayTarget)}</div>
             </div>
             <div className="mt-3 grid grid-cols-3 gap-2">
               <div className="rounded-xl bg-[#181D25] px-3 py-2">
