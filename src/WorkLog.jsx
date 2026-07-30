@@ -76,12 +76,50 @@ function hasFormData(form) {
       form.salesExtra ||
       form.tip ||
       form.count ||
+      form.handRaisedCount ||
+      form.totalDistance ||
+      form.occupiedDistance ||
+      form.condition ||
       form.workStart ||
       form.workEnd ||
       form.breakTime ||
       form.workHours ||
       form.notes
   );
+}
+function getConditionLabel(condition) {
+  switch (condition) {
+    case "good":
+      return "◉ 良";
+    case "normal":
+      return "○ 並";
+    case "bad":
+      return "▲ 悪";
+    default:
+      return "";
+  }
+}
+function formatOccupancyRate(totalDistance, occupiedDistance) {
+  const total = Number(totalDistance);
+  const occupied = Number(occupiedDistance);
+  if (!Number.isFinite(total) || !Number.isFinite(occupied) || total <= 0) return "--";
+  const rate = (occupied / total) * 100;
+  if (!Number.isFinite(rate)) return "--";
+  return `${rate.toFixed(1)}%`;
+}
+function formatAveragePrice(sales, count) {
+  const salesValue = Number(sales) || 0;
+  const countValue = Number(count) || 0;
+  if (!countValue) return "--";
+  const average = Math.round(salesValue / countValue);
+  if (!Number.isFinite(average)) return "--";
+  return `¥${average.toLocaleString("ja-JP")}`;
+}
+function formatDistanceValue(value) {
+  if (value === "" || value === null || value === undefined) return "--";
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric < 0) return "--";
+  return `${numeric.toLocaleString("ja-JP", { maximumFractionDigits: 1 })}km`;
 }
 function fmtDateLabel(iso) {
   if (!iso) return { m: 0, d: 0, wd: "" };
@@ -187,6 +225,10 @@ const emptyForm = (date) => ({
   salesExtra: "",
   tip: "",
   count: "",
+  handRaisedCount: "",
+  totalDistance: "",
+  occupiedDistance: "",
+  condition: "",
   workStart: "",
   workEnd: "",
   breakTime: "",
@@ -300,6 +342,20 @@ export default function WorkLog() {
   };
 
   const handleSave = () => {
+    const handRaisedValue = Number(form.handRaisedCount) || 0;
+    const countValue = Number(form.count) || 0;
+    const occupiedValue = Number(form.occupiedDistance) || 0;
+    const totalDistanceValue = Number(form.totalDistance) || 0;
+
+    if (handRaisedValue > countValue) {
+      showToast("手上げ乗車回数は通常の回数を超えません");
+      return;
+    }
+    if (occupiedValue > totalDistanceValue) {
+      showToast("営業距離は走行距離を超えません");
+      return;
+    }
+
     const id = form.id || `${form.date}-${Date.now()}`;
     const record = { ...form, dayStatus: getEffectiveDayStatus(form.date, form), id };
     const next = entries.some((e) => e.id === id)
@@ -419,6 +475,19 @@ export default function WorkLog() {
     }, 0);
   }, [periodEntries]);
   const monthlyRemaining = monthlySalesTotal >= monthlyTarget ? 0 : Math.max(monthlyTarget - monthlySalesTotal, 0);
+  const occupancyRateDisplay = useMemo(
+    () => formatOccupancyRate(form.totalDistance, form.occupiedDistance),
+    [form.totalDistance, form.occupiedDistance]
+  );
+  const averagePriceDisplay = useMemo(() => formatAveragePrice(form.sales, form.count), [form.sales, form.count]);
+  const handRaisedWarning =
+    Number(form.handRaisedCount) > Number(form.count || 0) && (form.handRaisedCount !== "" || form.count !== "")
+      ? "手上げ乗車回数は通常の回数を超えません。"
+      : "";
+  const distanceWarning =
+    Number(form.occupiedDistance) > Number(form.totalDistance || 0) && (form.occupiedDistance !== "" || form.totalDistance !== "")
+      ? "営業距離は走行距離を超えません。"
+      : "";
 
   const handleToggleHoliday = () => {
     if (!isWorkday) return;
@@ -570,93 +639,181 @@ export default function WorkLog() {
 
             {/* Form */}
             <div className="mx-5 mt-5 space-y-5">
-              <div className="grid grid-cols-2 gap-4">
-                <Field label="売上">
-                  <YenInput value={form.sales} onChange={(v) => updateField("sales", v)} disabled={false} />
-                </Field>
-                <Field label="メーター外売上">
-                  <YenInput value={form.salesExtra} onChange={(v) => updateField("salesExtra", v)} disabled={false} />
-                </Field>
-                <Field label="チップ">
-                  <YenInput value={form.tip} onChange={(v) => updateField("tip", v)} disabled={false} />
-                </Field>
-                <Field label="回数（メーター外は含まず）">
+              <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-4">
+                <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter">朝入力</div>
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label="体調">
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        { value: "good", label: "◉ 良", className: "border-[#6EE7A8]/40 text-[#6EE7A8]" },
+                        { value: "normal", label: "○ 並", className: "border-[#FFB454]/40 text-[#FFB454]" },
+                        { value: "bad", label: "▲ 悪", className: "border-[#FF6B57]/40 text-[#FF6B57]" },
+                      ].map((option) => {
+                        const active = form.condition === option.value;
+                        return (
+                          <button
+                            key={option.value}
+                            onClick={() => updateField("condition", option.value)}
+                            className={`rounded-full border px-3 py-2 text-sm transition-colors ${
+                              active ? `${option.className} bg-[#1F242C]` : "border-[#2A3140] text-[#8B93A1]"
+                            }`}
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </Field>
+                  <Field label="勤務開始">
+                    <TimeSelect value={form.workStart} onChange={(v) => updateField("workStart", v)} options={WORK_TIME_OPTIONS} />
+                  </Field>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-4">
+                <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter">営業データ</div>
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label="売上">
+                    <YenInput value={form.sales} onChange={(v) => updateField("sales", v)} disabled={false} />
+                  </Field>
+                  <Field label="メーター外売上">
+                    <YenInput value={form.salesExtra} onChange={(v) => updateField("salesExtra", v)} disabled={false} />
+                  </Field>
+                  <Field label="チップ">
+                    <YenInput value={form.tip} onChange={(v) => updateField("tip", v)} disabled={false} />
+                  </Field>
+                  <Field label="回数（メーター外は含まず）">
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      value={form.count}
+                      onChange={(e) => updateField("count", e.target.value)}
+                      placeholder="0"
+                      className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-5 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFB454]"
+                    />
+                  </Field>
+                  <Field label="手上げ乗車回数" helperText="通常の回数に含まれる手上げ乗車の回数" warning={handRaisedWarning}>
+                    <NumberInput
+                      value={form.handRaisedCount}
+                      onChange={(v) => updateField("handRaisedCount", v)}
+                      min={0}
+                      step="1"
+                      placeholder="0"
+                    />
+                  </Field>
+                  <Field label="走行距離" helperText="km" warning={distanceWarning}>
+                    <NumberInput
+                      value={form.totalDistance}
+                      onChange={(v) => updateField("totalDistance", v)}
+                      min={0}
+                      step="0.1"
+                      placeholder="0"
+                      unit="km"
+                    />
+                  </Field>
+                  <Field label="営業距離" helperText="km" warning={distanceWarning}>
+                    <NumberInput
+                      value={form.occupiedDistance}
+                      onChange={(v) => updateField("occupiedDistance", v)}
+                      min={0}
+                      step="0.1"
+                      placeholder="0"
+                      unit="km"
+                    />
+                  </Field>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-4">
+                <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter">営業効率</div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-xl border border-[#232A36] bg-[#171C24] px-3 py-3">
+                    <div className="text-[10px] text-[#7C8496]">走行距離</div>
+                    <div className="font-meter text-sm text-[#EDEFF3] mt-0.5">{formatDistanceValue(form.totalDistance)}</div>
+                  </div>
+                  <div className="rounded-xl border border-[#232A36] bg-[#171C24] px-3 py-3">
+                    <div className="text-[10px] text-[#7C8496]">営業距離</div>
+                    <div className="font-meter text-sm text-[#EDEFF3] mt-0.5">{formatDistanceValue(form.occupiedDistance)}</div>
+                  </div>
+                  <div className="rounded-xl border border-[#232A36] bg-[#171C24] px-3 py-3">
+                    <div className="text-[10px] text-[#7C8496]">乗車率</div>
+                    <div className="font-meter text-sm text-[#EDEFF3] mt-0.5">{occupancyRateDisplay}</div>
+                  </div>
+                  <div className="rounded-xl border border-[#232A36] bg-[#171C24] px-3 py-3">
+                    <div className="text-[10px] text-[#7C8496]">平均単価</div>
+                    <div className="font-meter text-sm text-[#EDEFF3] mt-0.5">{averagePriceDisplay}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-4">
+                <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter">終了時</div>
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label="休憩時間">
+                    <TimeSelect value={form.breakTime} onChange={(v) => updateField("breakTime", v)} options={BREAK_TIME_OPTIONS} />
+                  </Field>
+                  <Field label="勤務終了">
+                    <TimeSelect value={form.workEnd} onChange={(v) => updateField("workEnd", v)} options={WORK_TIME_OPTIONS} />
+                  </Field>
+                </div>
+
+                <Field label="勤務時間（自動計算・手入力で上書き可）">
                   <input
-                    type="number"
-                    inputMode="numeric"
-                    value={form.count}
-                    onChange={(e) => updateField("count", e.target.value)}
-                    placeholder="0"
+                    type="text"
+                    inputMode="decimal"
+                    value={form.workHours}
+                    onChange={(e) => setForm((f) => ({ ...f, workHours: e.target.value, hoursOverride: true }))}
+                    placeholder="0.0"
                     className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-5 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFB454]"
                   />
                 </Field>
-                <Field label="勤務開始">
-                  <TimeSelect value={form.workStart} onChange={(v) => updateField("workStart", v)} options={WORK_TIME_OPTIONS} />
-                </Field>
-                <Field label="勤務終了">
-                  <TimeSelect value={form.workEnd} onChange={(v) => updateField("workEnd", v)} options={WORK_TIME_OPTIONS} />
-                </Field>
-                <Field label="休憩時間">
-                  <TimeSelect value={form.breakTime} onChange={(v) => updateField("breakTime", v)} options={BREAK_TIME_OPTIONS} />
-                </Field>
-              </div>
 
-              <Field label="勤務時間（自動計算・手入力で上書き可）">
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={form.workHours}
-                  onChange={(e) => setForm((f) => ({ ...f, workHours: e.target.value, hoursOverride: true }))}
-                  placeholder="0.0"
-                  className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-5 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFB454]"
-                />
-              </Field>
+                <Field label="コメント">
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {PRESET_TAGS.map((tag) => {
+                      const active = activeTags.includes(tag);
+                      return (
+                        <button
+                          key={tag}
+                          onClick={() => toggleTag(tag)}
+                          className={`text-[14px] px-3.5 py-2 rounded-full border transition-colors ${
+                            active
+                              ? "bg-[#FFB454] border-[#FFB454] text-[#12151A] font-medium"
+                              : "border-[#2A3140] text-[#8B93A1] active:border-[#FFB454]"
+                          }`}
+                        >
+                          {tag}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <textarea
+                    value={form.notes}
+                    onChange={(e) => updateField("notes", e.target.value)}
+                    placeholder="タグをタップ、または自由に入力"
+                    rows={3}
+                    className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-4 text-[17px] text-[#EDEFF3] focus:outline-none focus:border-[#FFB454] resize-none"
+                  />
+                </Field>
 
-              <Field label="コメント">
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {PRESET_TAGS.map((tag) => {
-                    const active = activeTags.includes(tag);
-                    return (
-                      <button
-                        key={tag}
-                        onClick={() => toggleTag(tag)}
-                        className={`text-[14px] px-3.5 py-2 rounded-full border transition-colors ${
-                          active
-                            ? "bg-[#FFB454] border-[#FFB454] text-[#12151A] font-medium"
-                            : "border-[#2A3140] text-[#8B93A1] active:border-[#FFB454]"
-                        }`}
-                      >
-                        {tag}
-                      </button>
-                    );
-                  })}
-                </div>
-                <textarea
-                  value={form.notes}
-                  onChange={(e) => updateField("notes", e.target.value)}
-                  placeholder="タグをタップ、または自由に入力"
-                  rows={3}
-                  className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-4 text-[17px] text-[#EDEFF3] focus:outline-none focus:border-[#FFB454] resize-none"
-                />
-              </Field>
-
-              <div className="flex gap-2 pt-1">
-                <button
-                  onClick={handleSave}
-                  className="flex-1 flex items-center justify-center gap-2 bg-[#FFB454] text-[#12151A] font-medium text-lg py-5 rounded-xl active:bg-[#FFC578] transition-colors"
-                >
-                  <Save size={20} />
-                  {saveState === "saved" ? "保存しました" : saveState === "error" ? "保存に失敗しました" : "この日を保存"}
-                </button>
-                {form.id && (
+                <div className="flex gap-2 pt-1">
                   <button
-                    onClick={() => setConfirmDeleteId(form.id)}
-                    className="px-6 rounded-xl border border-[#2A3140] text-[#7C8496] active:border-[#FF6B57] active:text-[#FF6B57] transition-colors"
-                    aria-label="削除"
+                    onClick={handleSave}
+                    className="flex-1 flex items-center justify-center gap-2 bg-[#FFB454] text-[#12151A] font-medium text-lg py-5 rounded-xl active:bg-[#FFC578] transition-colors"
                   >
-                    <Trash2 size={22} />
+                    <Save size={20} />
+                    {saveState === "saved" ? "保存しました" : saveState === "error" ? "保存に失敗しました" : "この日を保存"}
                   </button>
-                )}
+                  {form.id && (
+                    <button
+                      onClick={() => setConfirmDeleteId(form.id)}
+                      className="px-6 rounded-xl border border-[#2A3140] text-[#7C8496] active:border-[#FF6B57] active:text-[#FF6B57] transition-colors"
+                      aria-label="削除"
+                    >
+                      <Trash2 size={22} />
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </>
@@ -928,11 +1085,15 @@ export default function WorkLog() {
   );
 }
 
-function Field({ label, children }) {
+function Field({ label, children, helperText, warning }) {
   return (
     <div>
-      <div className="text-[13px] text-[#7C8496] mb-1.5">{label}</div>
+      <div className="text-[13px] text-[#7C8496] mb-1.5">
+        <div>{label}</div>
+        {helperText ? <div className="text-[11px] text-[#7C8496] mt-0.5">{helperText}</div> : null}
+      </div>
       {children}
+      {warning ? <div className="mt-2 text-[12px] text-[#FF6B57]">{warning}</div> : null}
     </div>
   );
 }
@@ -950,6 +1111,25 @@ function YenInput({ value, onChange, disabled = false }) {
         disabled={disabled}
         className="w-full bg-[#181D25] border border-[#232A36] rounded-xl pl-9 pr-4 py-5 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFB454] disabled:opacity-60"
       />
+    </div>
+  );
+}
+
+function NumberInput({ value, onChange, min = 0, step = "any", placeholder = "0", unit = "", disabled = false }) {
+  return (
+    <div className="relative">
+      <input
+        type="number"
+        inputMode="decimal"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        min={min}
+        step={step}
+        disabled={disabled}
+        className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-5 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFB454] disabled:opacity-60"
+      />
+      {unit ? <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[#7C8496] text-sm">{unit}</span> : null}
     </div>
   );
 }
