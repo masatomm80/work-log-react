@@ -1,7 +1,7 @@
 {
-  "name": "運行日報",
-  "short_name": "運行日報",
-  "description": "毎日の売上・チップ・勤務時間を記録する運行日報アプリ",
+  "name": "M's Taxi AI",
+  "short_name": "M's Taxi AI",
+  "description": "M's Taxi AI — 毎日の売上・チップ・勤務時間を記録するアプリ",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

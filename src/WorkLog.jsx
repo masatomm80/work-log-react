@@ -423,7 +423,7 @@ export default function WorkLog() {
         );
       });
     const csv = "\uFEFF" + rows.join("\r\n");
-    downloadBlob(csv, "text/csv;charset=utf-8", `運行日報_${todayISO()}.csv`);
+    downloadBlob(csv, "text/csv;charset=utf-8", `M's Taxi AI_${todayISO()}.csv`);
     showToast("CSVを書き出しました");
   };
 
