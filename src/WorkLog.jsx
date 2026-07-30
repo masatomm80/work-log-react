@@ -20,14 +20,14 @@ const DAY_STATUS = {
   DAYOFF: "dayoff",
   HOLIDAY: "holiday",
 };
-const WORK_TIME_OPTIONS = Array.from({ length: 24 * 6 }, (_, i) => {
-  const mins = i * 10;
+const WORK_TIME_OPTIONS = Array.from({ length: 24 * 2 }, (_, i) => {
+  const mins = i * 30;
   const h = String(Math.floor(mins / 60)).padStart(2, "0");
   const m = String(mins % 60).padStart(2, "0");
   return `${h}:${m}`;
 });
-const BREAK_TIME_OPTIONS = Array.from({ length: 8 * 6 + 1 }, (_, i) => {
-  const mins = i * 10;
+const BREAK_TIME_OPTIONS = Array.from({ length: 8 * 2 + 1 }, (_, i) => {
+  const mins = i * 30;
   const h = String(Math.floor(mins / 60)).padStart(2, "0");
   const m = String(mins % 60).padStart(2, "0");
   return `${h}:${m}`;
@@ -129,6 +129,22 @@ function getPeriodBounds(iso) {
     end = new Date(y, m - 1, 20);
   }
   return { start: toISO(start), end: toISO(end) };
+}
+function getMonthlyTarget(iso) {
+  const dt = parseISO(iso);
+  const month = dt.getMonth() + 1;
+  const day = dt.getDate();
+  if (month === 12 && day >= 21) return 850000;
+  if (month === 1 && day <= 20) return 850000;
+  if ((month === 1 && day >= 21) || (month === 2 && day <= 20)) return 750000;
+  if ((month === 2 && day >= 21) || (month === 3 && day <= 20)) return 750000;
+  return 800000;
+}
+function formatPeriodLabel(startIso, endIso) {
+  const start = parseISO(startIso);
+  const end = parseISO(endIso);
+  const fmt = (dt) => `${dt.getMonth() + 1}/${dt.getDate()}`;
+  return `${fmt(start)}〜${fmt(end)}`;
 }
 function shiftPeriod(anchorISO, dir) {
   const { start, end } = getPeriodBounds(anchorISO);
@@ -394,6 +410,15 @@ export default function WorkLog() {
   const activeTags = form.notes ? form.notes.split(/[\s、,　]+/).filter(Boolean) : [];
   const periodStartLbl = fmtDateLabel(periodBounds.start);
   const periodEndLbl = fmtDateLabel(periodBounds.end);
+  const monthlyTarget = getMonthlyTarget(selectedDate);
+  const monthlyPeriodLabel = formatPeriodLabel(periodBounds.start, periodBounds.end);
+  const monthlySalesTotal = useMemo(() => {
+    return periodEntries.reduce((acc, e) => {
+      acc += (Number(e.sales) || 0) + (Number(e.salesExtra) || 0);
+      return acc;
+    }, 0);
+  }, [periodEntries]);
+  const monthlyRemaining = monthlySalesTotal >= monthlyTarget ? 0 : Math.max(monthlyTarget - monthlySalesTotal, 0);
 
   const handleToggleHoliday = () => {
     if (!isWorkday) return;
@@ -549,13 +574,13 @@ export default function WorkLog() {
                 <Field label="売上">
                   <YenInput value={form.sales} onChange={(v) => updateField("sales", v)} disabled={false} />
                 </Field>
-                <Field label="追加売上（任意）">
+                <Field label="メーター外売上">
                   <YenInput value={form.salesExtra} onChange={(v) => updateField("salesExtra", v)} disabled={false} />
                 </Field>
                 <Field label="チップ">
                   <YenInput value={form.tip} onChange={(v) => updateField("tip", v)} disabled={false} />
                 </Field>
-                <Field label="回数">
+                <Field label="回数（メーター外は含まず）">
                   <input
                     type="number"
                     inputMode="numeric"
@@ -727,11 +752,32 @@ export default function WorkLog() {
               </div>
               <div className="px-4 py-3 border-r border-[#232A36] min-w-0">
                 <div className="text-[10px] text-[#7C8496] tracking-wide">合計回数</div>
-                <div className="font-meter text-base font-medium mt-0.5">{periodTotals.count}</div>
+                <div className="font-meter text-base font-medium mt-0.5 leading-tight">
+                  <div>{periodTotals.count}</div>
+                  <div className="text-[10px] text-[#7C8496]">メーター外除く</div>
+                </div>
               </div>
               <div className="px-4 py-3 min-w-0">
                 <div className="text-[10px] text-[#7C8496] tracking-wide">出勤日数</div>
                 <div className="font-meter text-base font-medium mt-0.5">{periodTotals.days}日</div>
+              </div>
+            </div>
+            <div className="border-t border-[#232A36] px-4 py-3">
+              <div className="text-[10px] tracking-[0.2em] text-[#7C8496] font-meter">月間売上</div>
+              <div className="font-meter text-sm font-medium text-[#EDEFF3] mt-1">{monthlyPeriodLabel}</div>
+              <div className="mt-2 grid grid-cols-3 gap-2">
+                <div className="rounded-xl bg-[#181D25] px-3 py-2">
+                  <div className="text-[10px] text-[#7C8496]">合計</div>
+                  <div className="font-meter text-sm text-[#EDEFF3] mt-0.5">¥{yen(monthlySalesTotal)}</div>
+                </div>
+                <div className="rounded-xl bg-[#181D25] px-3 py-2">
+                  <div className="text-[10px] text-[#7C8496]">ノルマ</div>
+                  <div className="font-meter text-sm text-[#EDEFF3] mt-0.5">¥{yen(monthlyTarget)}</div>
+                </div>
+                <div className="rounded-xl bg-[#181D25] px-3 py-2">
+                  <div className="text-[10px] text-[#7C8496]">残額</div>
+                  <div className="font-meter text-sm text-[#EDEFF3] mt-0.5">¥{yen(monthlyRemaining)}</div>
+                </div>
               </div>
             </div>
             {periodTotals.hours > 0 && (
