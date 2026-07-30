@@ -12,9 +12,11 @@ import {
 } from "lucide-react";
 
 const STORAGE_KEY = "workLogEntries";
+const STORAGE_KEY_TARGET = "workLogSalesTarget";
 const PRESET_TAGS = ["日赤", "日赤夜", "寝台", "宿直", "横関", "横関夜", "早出", "明け", "点検書類提出"];
 const WEEKDAY_JA = ["日", "月", "火", "水", "木", "金", "土"];
 const FIRST_WORKDAY = "2024-12-22";
+const DEFAULT_SALES_TARGET = 75000;
 const DAY_STATUS = {
   WORKDAY: "workday",
   DAYOFF: "dayoff",
@@ -89,6 +91,16 @@ function fmtDateLabel(iso) {
   const [, m, d] = iso.split("-").map(Number);
   return { m, d, wd: WEEKDAY_JA[dt.getDay()] };
 }
+function getWeekdayBadgeClass(weekday) {
+  switch (weekday) {
+    case "土":
+      return "border-[#7CB5FF]/25 bg-[#7CB5FF]/10 text-[#7CB5FF]";
+    case "日":
+      return "border-[#FF8A80]/25 bg-[#FF8A80]/10 text-[#FF8A80]";
+    default:
+      return "border-[#2A3140] bg-[#181D25] text-[#C0C8D4]";
+  }
+}
 function parseTimeToMinutes(value) {
   if (!value) return null;
   const [h, m] = value.split(":").map(Number);
@@ -150,6 +162,25 @@ function persistEntries(entries) {
     return false;
   }
 }
+function loadSalesTarget() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_TARGET);
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_SALES_TARGET;
+  } catch (e) {
+    console.error("目標読み込みエラー", e);
+    return DEFAULT_SALES_TARGET;
+  }
+}
+function persistSalesTarget(value) {
+  try {
+    localStorage.setItem(STORAGE_KEY_TARGET, String(value));
+    return true;
+  } catch (e) {
+    console.error("目標保存エラー", e);
+    return false;
+  }
+}
 
 const emptyForm = (date) => ({
   id: null,
@@ -198,6 +229,8 @@ export default function WorkLog() {
   const [selectedDate, setSelectedDate] = useState(todayISO());
   const [form, setForm] = useState(emptyForm(todayISO()));
   const [periodAnchor, setPeriodAnchor] = useState(todayISO());
+  const [salesTarget, setSalesTarget] = useState(() => loadSalesTarget());
+  const [salesTargetInput, setSalesTargetInput] = useState(() => String(loadSalesTarget()));
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [toast, setToast] = useState(null);
   const dateInputRef = useRef(null);
@@ -239,6 +272,20 @@ export default function WorkLog() {
     setToast(msg);
     clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(null), 1600);
+  };
+
+  const handleGoToToday = () => {
+    const today = todayISO();
+    setSelectedDate(today);
+    setPeriodAnchor(today);
+  };
+
+  const handleSaveSalesTarget = () => {
+    const nextValue = Math.max(0, Number(salesTargetInput) || 0);
+    setSalesTarget(nextValue);
+    setSalesTargetInput(String(nextValue));
+    persistSalesTarget(nextValue);
+    showToast(`売上目標を${nextValue.toLocaleString("ja-JP")}円に設定しました`);
   };
 
   const updateField = (key, value) => {
@@ -365,9 +412,12 @@ export default function WorkLog() {
   const isWorkday = effectiveStatus === DAY_STATUS.WORKDAY;
   const isHoliday = effectiveStatus === DAY_STATUS.HOLIDAY;
   const isDayOff = effectiveStatus === DAY_STATUS.DAYOFF;
-  const canEditFields = isWorkday;
+  const isTodaySelected = selectedDate === todayISO();
   const statusLabel = getStatusLabel(effectiveStatus);
-  const totalSales = (Number(form.sales) || 0) + (Number(form.salesExtra) || 0);
+  const currentSalesTotal = (Number(form.sales) || 0) + (Number(form.salesExtra) || 0);
+  const totalSales = currentSalesTotal;
+  const targetRemaining = Math.max(salesTarget - currentSalesTotal, 0);
+  const achievementRate = salesTarget > 0 ? (currentSalesTotal / salesTarget) * 100 : 0;
   const activeTags = form.notes ? form.notes.split(/[\s、,　]+/).filter(Boolean) : [];
   const periodStartLbl = fmtDateLabel(periodBounds.start);
   const periodEndLbl = fmtDateLabel(periodBounds.end);
@@ -393,7 +443,7 @@ export default function WorkLog() {
       </header>
 
       {/* Date nav */}
-      <div className="flex items-center justify-between px-5 py-3 border-b border-[#232A36] bg-[#161A21] sticky top-0 z-10 max-w-[560px] mx-auto">
+      <div className="flex items-center justify-between gap-2 px-5 py-3 border-b border-[#232A36] bg-[#161A21] sticky top-0 z-10 max-w-[560px] mx-auto">
         <button
           onClick={() => setSelectedDate((s) => addDays(s, -1))}
           className="p-2 -ml-2 text-[#7C8496] active:text-[#FFB454] transition-colors"
@@ -401,8 +451,16 @@ export default function WorkLog() {
         >
           <ChevronLeft size={20} />
         </button>
+        {!isTodaySelected ? (
+          <button
+            onClick={handleGoToToday}
+            className="rounded-full border border-[#2A3140] px-3 py-1.5 text-[11px] text-[#C0C8D4] active:border-[#FFB454] active:text-[#FFB454]"
+          >
+            今日へ戻る
+          </button>
+        ) : null}
         <button
-          className="flex items-baseline gap-2 relative"
+          className="flex items-baseline gap-2 relative flex-1 justify-center"
           onClick={() => dateInputRef.current?.showPicker?.() || dateInputRef.current?.click()}
         >
           <span className="font-meter text-lg font-bold">
@@ -410,7 +468,9 @@ export default function WorkLog() {
             <span className="text-[#7C8496] mx-0.5">/</span>
             {d}
           </span>
-          <span className="text-sm text-[#7C8496]">({wd})</span>
+          <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${getWeekdayBadgeClass(wd)}`}>
+            {wd}
+          </span>
           <CalendarDays size={14} className="text-[#7C8496] ml-1" />
           <input
             ref={dateInputRef}
@@ -455,129 +515,220 @@ export default function WorkLog() {
           </div>
         </div>
 
-        {/* Meter panel */}
-        <div className="mx-5 mt-5 rounded-2xl bg-[#181D25] border border-[#232A36] overflow-hidden">
-          <div className="border-l-4 border-[#FFB454] px-5 py-5">
-            <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter">売上 SALES</div>
-            <div
-              className="font-meter font-bold text-[#FFD98A] mt-1 leading-none break-all"
-              style={{ fontSize: "clamp(2.2rem, 9vw, 3rem)", textShadow: "0 0 18px rgba(255,180,84,0.35)" }}
-            >
-              ¥{yen(totalSales)}
+        {isWorkday ? (
+          <div className="mx-5 mt-3 rounded-2xl border border-[#232A36] bg-[#171C24] px-4 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[10px] tracking-[0.2em] text-[#7C8496] font-meter">売上目標</div>
+                <div className="font-medium text-[#EDEFF3] mt-1">目標 ¥{yen(salesTarget)}</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  value={salesTargetInput}
+                  onChange={(e) => setSalesTargetInput(e.target.value)}
+                  className="w-24 rounded-lg border border-[#2A3140] bg-[#181D25] px-2 py-2 text-sm text-[#EDEFF3] focus:outline-none focus:border-[#FFB454]"
+                  placeholder="75000"
+                />
+                <button
+                  onClick={handleSaveSalesTarget}
+                  className="rounded-lg border border-[#2A3140] px-2.5 py-2 text-[12px] text-[#C0C8D4] active:border-[#FFB454] active:text-[#FFB454]"
+                >
+                  保存
+                </button>
+              </div>
             </div>
-            {form.salesExtra ? (
-              <div className="text-[12px] text-[#7C8496] mt-1 font-meter">
-                内訳 {yen(form.sales)} + {yen(form.salesExtra)}
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              <div className="rounded-xl bg-[#181D25] px-3 py-2">
+                <div className="text-[10px] text-[#7C8496]">現在の売上</div>
+                <div className="font-meter text-sm text-[#EDEFF3] mt-0.5">¥{yen(currentSalesTotal)}</div>
               </div>
-            ) : null}
-          </div>
-          <div className="grid grid-cols-3 border-t border-[#232A36]">
-            {[
-              ["チップ", form.tip ? `¥${yen(form.tip)}` : "—"],
-              ["回数", form.count || "—"],
-              ["勤務時間", form.workHours ? `${form.workHours}h` : "—"],
-            ].map(([label, val]) => (
-              <div key={label} className="px-4 py-3 border-r border-[#232A36] last:border-r-0 min-w-0">
-                <div className="text-[10px] text-[#7C8496] tracking-wide">{label}</div>
-                <div className="font-meter text-base font-medium mt-0.5 text-[#EDEFF3] break-all">{val}</div>
+              <div className="rounded-xl bg-[#181D25] px-3 py-2">
+                <div className="text-[10px] text-[#7C8496]">残額</div>
+                <div className="font-meter text-sm text-[#EDEFF3] mt-0.5">¥{yen(targetRemaining)}</div>
               </div>
-            ))}
+              <div className="rounded-xl bg-[#181D25] px-3 py-2">
+                <div className="text-[10px] text-[#7C8496]">達成率</div>
+                <div className="font-meter text-sm text-[#EDEFF3] mt-0.5">{achievementRate.toFixed(1)}%</div>
+              </div>
+            </div>
           </div>
-        </div>
+        ) : null}
 
-        {/* Form */}
-        <div className="mx-5 mt-5 space-y-5">
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="売上">
-              <YenInput value={form.sales} onChange={(v) => updateField("sales", v)} disabled={!canEditFields} />
-            </Field>
-            <Field label="追加売上（任意）">
-              <YenInput value={form.salesExtra} onChange={(v) => updateField("salesExtra", v)} disabled={!canEditFields} />
-            </Field>
-            <Field label="チップ">
-              <YenInput value={form.tip} onChange={(v) => updateField("tip", v)} disabled={!canEditFields} />
-            </Field>
-            <Field label="回数">
-              <input
-                type="number"
-                inputMode="numeric"
-                value={form.count}
-                onChange={(e) => updateField("count", e.target.value)}
-                placeholder="0"
-                disabled={!canEditFields}
-                className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-5 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFB454] disabled:opacity-60"
-              />
-            </Field>
-            <Field label="勤務開始">
-              <TimeSelect value={form.workStart} onChange={(v) => updateField("workStart", v)} options={WORK_TIME_OPTIONS} disabled={!canEditFields} />
-            </Field>
-            <Field label="勤務終了">
-              <TimeSelect value={form.workEnd} onChange={(v) => updateField("workEnd", v)} options={WORK_TIME_OPTIONS} disabled={!canEditFields} />
-            </Field>
-            <Field label="休憩時間">
-              <TimeSelect value={form.breakTime} onChange={(v) => updateField("breakTime", v)} options={BREAK_TIME_OPTIONS} disabled={!canEditFields} />
-            </Field>
-          </div>
+        {isWorkday ? (
+          <>
+            {/* Meter panel */}
+            <div className="mx-5 mt-5 rounded-2xl bg-[#181D25] border border-[#232A36] overflow-hidden">
+              <div className="border-l-4 border-[#FFB454] px-5 py-5">
+                <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter">売上 SALES</div>
+                <div
+                  className="font-meter font-bold text-[#FFD98A] mt-1 leading-none break-all"
+                  style={{ fontSize: "clamp(2.2rem, 9vw, 3rem)", textShadow: "0 0 18px rgba(255,180,84,0.35)" }}
+                >
+                  ¥{yen(totalSales)}
+                </div>
+                {form.salesExtra ? (
+                  <div className="text-[12px] text-[#7C8496] mt-1 font-meter">
+                    内訳 {yen(form.sales)} + {yen(form.salesExtra)}
+                  </div>
+                ) : null}
+              </div>
+              <div className="grid grid-cols-3 border-t border-[#232A36]">
+                {[
+                  ["チップ", form.tip ? `¥${yen(form.tip)}` : "—"],
+                  ["回数", form.count || "—"],
+                  ["勤務時間", form.workHours ? `${form.workHours}h` : "—"],
+                ].map(([label, val]) => (
+                  <div key={label} className="px-4 py-3 border-r border-[#232A36] last:border-r-0 min-w-0">
+                    <div className="text-[10px] text-[#7C8496] tracking-wide">{label}</div>
+                    <div className="font-meter text-base font-medium mt-0.5 text-[#EDEFF3] break-all">{val}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
 
-          <Field label="勤務時間（自動計算・手入力で上書き可）">
-            <input
-              type="text"
-              inputMode="decimal"
-              value={form.workHours}
-              onChange={(e) => setForm((f) => ({ ...f, workHours: e.target.value, hoursOverride: true }))}
-              placeholder="0.0"
-              disabled={!canEditFields}
-              className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-5 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFB454] disabled:opacity-60"
-            />
-          </Field>
+            {/* Form */}
+            <div className="mx-5 mt-5 space-y-5">
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="売上">
+                  <YenInput value={form.sales} onChange={(v) => updateField("sales", v)} disabled={false} />
+                </Field>
+                <Field label="追加売上（任意）">
+                  <YenInput value={form.salesExtra} onChange={(v) => updateField("salesExtra", v)} disabled={false} />
+                </Field>
+                <Field label="チップ">
+                  <YenInput value={form.tip} onChange={(v) => updateField("tip", v)} disabled={false} />
+                </Field>
+                <Field label="回数">
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={form.count}
+                    onChange={(e) => updateField("count", e.target.value)}
+                    placeholder="0"
+                    className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-5 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFB454]"
+                  />
+                </Field>
+                <Field label="勤務開始">
+                  <TimeSelect value={form.workStart} onChange={(v) => updateField("workStart", v)} options={WORK_TIME_OPTIONS} />
+                </Field>
+                <Field label="勤務終了">
+                  <TimeSelect value={form.workEnd} onChange={(v) => updateField("workEnd", v)} options={WORK_TIME_OPTIONS} />
+                </Field>
+                <Field label="休憩時間">
+                  <TimeSelect value={form.breakTime} onChange={(v) => updateField("breakTime", v)} options={BREAK_TIME_OPTIONS} />
+                </Field>
+              </div>
 
-          <Field label="コメント">
-            <div className="flex flex-wrap gap-2 mb-3">
-              {PRESET_TAGS.map((tag) => {
-                const active = activeTags.includes(tag);
-                return (
+              <Field label="勤務時間（自動計算・手入力で上書き可）">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={form.workHours}
+                  onChange={(e) => setForm((f) => ({ ...f, workHours: e.target.value, hoursOverride: true }))}
+                  placeholder="0.0"
+                  className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-5 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFB454]"
+                />
+              </Field>
+
+              <Field label="コメント">
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {PRESET_TAGS.map((tag) => {
+                    const active = activeTags.includes(tag);
+                    return (
+                      <button
+                        key={tag}
+                        onClick={() => toggleTag(tag)}
+                        className={`text-[14px] px-3.5 py-2 rounded-full border transition-colors ${
+                          active
+                            ? "bg-[#FFB454] border-[#FFB454] text-[#12151A] font-medium"
+                            : "border-[#2A3140] text-[#8B93A1] active:border-[#FFB454]"
+                        }`}
+                      >
+                        {tag}
+                      </button>
+                    );
+                  })}
+                </div>
+                <textarea
+                  value={form.notes}
+                  onChange={(e) => updateField("notes", e.target.value)}
+                  placeholder="タグをタップ、または自由に入力"
+                  rows={3}
+                  className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-4 text-[17px] text-[#EDEFF3] focus:outline-none focus:border-[#FFB454] resize-none"
+                />
+              </Field>
+
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={handleSave}
+                  className="flex-1 flex items-center justify-center gap-2 bg-[#FFB454] text-[#12151A] font-medium text-lg py-5 rounded-xl active:bg-[#FFC578] transition-colors"
+                >
+                  <Save size={20} />
+                  {saveState === "saved" ? "保存しました" : saveState === "error" ? "保存に失敗しました" : "この日を保存"}
+                </button>
+                {form.id && (
                   <button
-                    key={tag}
-                    onClick={() => toggleTag(tag)}
-                    className={`text-[14px] px-3.5 py-2 rounded-full border transition-colors ${
-                      active
-                        ? "bg-[#FFB454] border-[#FFB454] text-[#12151A] font-medium"
-                        : "border-[#2A3140] text-[#8B93A1] active:border-[#FFB454]"
+                    onClick={() => setConfirmDeleteId(form.id)}
+                    className="px-6 rounded-xl border border-[#2A3140] text-[#7C8496] active:border-[#FF6B57] active:text-[#FF6B57] transition-colors"
+                    aria-label="削除"
+                  >
+                    <Trash2 size={22} />
+                  </button>
+                )}
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="mx-5 mt-5 space-y-4">
+            <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-3">
+              <div className="text-[12px] text-[#7C8496]">日付</div>
+              <div className="font-medium text-[#EDEFF3]">{m}/{d} ({wd})</div>
+            </div>
+            <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-3">
+              <div className="text-[12px] text-[#7C8496]">勤務状態</div>
+              <div className="font-medium text-[#EDEFF3]">{isHoliday ? "公休日" : "明け休み"}</div>
+            </div>
+            {isHoliday ? (
+              <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-[12px] text-[#7C8496]">公休日チェック</div>
+                  <button
+                    onClick={handleToggleHoliday}
+                    className={`flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition-colors ${
+                      isHoliday
+                        ? "border-[#FFB454] bg-[#FFB454]/10 text-[#FFB454]"
+                        : "border-[#2A3140] text-[#8B93A1]"
                     }`}
                   >
-                    {tag}
+                    <span className={`flex h-4 w-4 items-center justify-center rounded border ${isHoliday ? "border-[#FFB454] bg-[#FFB454] text-[#12151A]" : "border-[#8B93A1]"}`}>
+                      {isHoliday ? "✓" : ""}
+                    </span>
+                    公休日
                   </button>
-                );
-              })}
+                </div>
+              </div>
+            ) : null}
+            <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-3">
+              <div className="text-[12px] text-[#7C8496]">コメント</div>
+              <textarea
+                value={form.notes}
+                onChange={(e) => updateField("notes", e.target.value)}
+                placeholder="メモを入力"
+                rows={3}
+                className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-4 text-[17px] text-[#EDEFF3] focus:outline-none focus:border-[#FFB454] resize-none"
+              />
             </div>
-            <textarea
-              value={form.notes}
-              onChange={(e) => updateField("notes", e.target.value)}
-              placeholder="タグをタップ、または自由に入力"
-              rows={3}
-              className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-4 text-[17px] text-[#EDEFF3] focus:outline-none focus:border-[#FFB454] resize-none"
-            />
-          </Field>
-
-          <div className="flex gap-2 pt-1">
             <button
               onClick={handleSave}
-              className="flex-1 flex items-center justify-center gap-2 bg-[#FFB454] text-[#12151A] font-medium text-lg py-5 rounded-xl active:bg-[#FFC578] transition-colors"
+              className="w-full flex items-center justify-center gap-2 bg-[#FFB454] text-[#12151A] font-medium text-lg py-5 rounded-xl active:bg-[#FFC578] transition-colors"
             >
               <Save size={20} />
               {saveState === "saved" ? "保存しました" : saveState === "error" ? "保存に失敗しました" : "この日を保存"}
             </button>
-            {form.id && (
-              <button
-                onClick={() => setConfirmDeleteId(form.id)}
-                className="px-6 rounded-xl border border-[#2A3140] text-[#7C8496] active:border-[#FF6B57] active:text-[#FF6B57] transition-colors"
-                aria-label="削除"
-              >
-                <Trash2 size={22} />
-              </button>
-            )}
           </div>
-        </div>
+        )}
 
         {/* Monthly total */}
         <div className="mx-5 mt-8">
@@ -668,7 +819,9 @@ export default function WorkLog() {
                         <span className="font-bold">
                           {label.m}/{label.d}
                         </span>
-                        <span className="text-[12px] text-[#7C8496]">({label.wd})</span>
+                        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${getWeekdayBadgeClass(label.wd)}`}>
+                          {label.wd}
+                        </span>
                       </div>
                       <div className="flex items-center gap-3 font-meter text-[13px] text-[#EDEFF3] min-w-0">
                         <span className={`rounded-full px-2 py-1 text-[11px] ${statusBadgeClass}`}>{getStatusLabel(entryStatus)}</span>
