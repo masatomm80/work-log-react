@@ -13,6 +13,12 @@ import {
 
 const STORAGE_KEY = "workLogEntries";
 const PRESET_TAGS = ["日赤", "日赤夜", "寝台", "宿直", "横関", "横関夜", "早出", "明け", "点検書類提出"];
+const WEATHER_OPTIONS = [
+  { value: "sunny", label: "晴れ" },
+  { value: "cloudy", label: "くもり" },
+  { value: "rain", label: "雨" },
+  { value: "snow", label: "雪" },
+];
 const WEEKDAY_JA = ["日", "月", "火", "水", "木", "金", "土"];
 const FIRST_WORKDAY = "2024-12-22";
 const DAY_STATUS = {
@@ -77,9 +83,11 @@ function hasFormData(form) {
       form.tip ||
       form.count ||
       form.handRaisedCount ||
+      form.appRideCount ||
       form.totalDistance ||
       form.occupiedDistance ||
       form.condition ||
+      (Array.isArray(form.weather) && form.weather.length) ||
       form.workStart ||
       form.workEnd ||
       form.breakTime ||
@@ -226,9 +234,11 @@ const emptyForm = (date) => ({
   tip: "",
   count: "",
   handRaisedCount: "",
+  appRideCount: "",
   totalDistance: "",
   occupiedDistance: "",
   condition: "",
+  weather: [],
   workStart: "",
   workEnd: "",
   breakTime: "",
@@ -242,6 +252,7 @@ function normalizeForm(date, existing) {
   return {
     ...emptyForm(date),
     ...(existing || {}),
+    weather: Array.isArray(existing?.weather) ? existing.weather : [],
     dayStatus: getEffectiveDayStatus(date, existing),
   };
 }
@@ -343,12 +354,21 @@ export default function WorkLog() {
 
   const handleSave = () => {
     const handRaisedValue = Number(form.handRaisedCount) || 0;
+    const appRideValue = Number(form.appRideCount) || 0;
     const countValue = Number(form.count) || 0;
     const occupiedValue = Number(form.occupiedDistance) || 0;
     const totalDistanceValue = Number(form.totalDistance) || 0;
 
     if (handRaisedValue > countValue) {
       showToast("手上げ乗車回数は通常の回数を超えません");
+      return;
+    }
+    if (appRideValue > countValue) {
+      showToast("アプリ乗車回数は通常の回数を超えません");
+      return;
+    }
+    if (handRaisedValue + appRideValue > countValue) {
+      showToast("手上げ乗車回数とアプリ乗車回数の合計が通常の回数を超えます");
       return;
     }
     if (occupiedValue > totalDistanceValue) {
@@ -484,10 +504,20 @@ export default function WorkLog() {
     Number(form.handRaisedCount) > Number(form.count || 0) && (form.handRaisedCount !== "" || form.count !== "")
       ? "手上げ乗車回数は通常の回数を超えません。"
       : "";
+  const appRideWarning =
+    Number(form.appRideCount) > Number(form.count || 0) && (form.appRideCount !== "" || form.count !== "")
+      ? "アプリ乗車回数は通常の回数を超えません。"
+      : "";
+  const rideTotalWarning =
+    (Number(form.handRaisedCount) || 0) + (Number(form.appRideCount) || 0) > Number(form.count || 0) &&
+    (form.handRaisedCount !== "" || form.appRideCount !== "" || form.count !== "")
+      ? "手上げ乗車回数とアプリ乗車回数の合計が通常の回数を超えます。"
+      : "";
   const distanceWarning =
     Number(form.occupiedDistance) > Number(form.totalDistance || 0) && (form.occupiedDistance !== "" || form.totalDistance !== "")
       ? "営業距離は走行距離を超えません。"
       : "";
+  const companyRadioCountDisplay = Math.max((Number(form.count) || 0) - (Number(form.handRaisedCount) || 0) - (Number(form.appRideCount) || 0), 0);
 
   const handleToggleHoliday = () => {
     if (!isWorkday) return;
@@ -664,6 +694,32 @@ export default function WorkLog() {
                       })}
                     </div>
                   </Field>
+                  <Field label="天気">
+                    <div className="flex flex-wrap gap-2">
+                      {WEATHER_OPTIONS.map((option) => {
+                        const active = Array.isArray(form.weather) && form.weather.includes(option.value);
+                        return (
+                          <button
+                            key={option.value}
+                            onClick={() => {
+                              setForm((f) => {
+                                const current = Array.isArray(f.weather) ? f.weather : [];
+                                const next = current.includes(option.value)
+                                  ? current.filter((item) => item !== option.value)
+                                  : [...current, option.value];
+                                return { ...f, weather: next };
+                              });
+                            }}
+                            className={`rounded-full border px-3 py-2 text-sm transition-colors ${
+                              active ? "border-[#FFB454] bg-[#FFB454]/10 text-[#FFB454]" : "border-[#2A3140] text-[#8B93A1]"
+                            }`}
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </Field>
                   <Field label="勤務開始">
                     <TimeSelect value={form.workStart} onChange={(v) => updateField("workStart", v)} options={WORK_TIME_OPTIONS} />
                   </Field>
@@ -700,6 +756,20 @@ export default function WorkLog() {
                       step="1"
                       placeholder="0"
                     />
+                  </Field>
+                  <Field label="アプリ乗車回数" helperText="通常の回数に含まれるアプリ乗車の回数" warning={appRideWarning}>
+                    <NumberInput
+                      value={form.appRideCount}
+                      onChange={(v) => updateField("appRideCount", v)}
+                      min={0}
+                      step="1"
+                      placeholder="0"
+                    />
+                  </Field>
+                  <Field label="会社無線配車回数" helperText="自動計算" warning={rideTotalWarning}>
+                    <div className="rounded-xl border border-[#232A36] bg-[#181D25] px-4 py-5 text-xl font-meter text-[#EDEFF3]">
+                      {companyRadioCountDisplay}
+                    </div>
                   </Field>
                   <Field label="走行距離" helperText="km" warning={distanceWarning}>
                     <NumberInput
