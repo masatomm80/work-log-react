@@ -14,18 +14,6 @@ import {
 const STORAGE_KEY = "workLogEntries";
 const PRESET_TAGS = ["日赤", "日赤夜", "寝台", "宿直", "横関", "横関夜", "早出", "明け", "点検書類提出"];
 const WEEKDAY_JA = ["日", "月", "火", "水", "木", "金", "土"];
-const WORK_TIME_OPTIONS = Array.from({ length: 24 * 6 }, (_, i) => {
-  const mins = i * 10;
-  const h = String(Math.floor(mins / 60)).padStart(2, "0");
-  const m = String(mins % 60).padStart(2, "0");
-  return `${h}:${m}`;
-});
-const BREAK_TIME_OPTIONS = Array.from({ length: 8 * 6 + 1 }, (_, i) => {
-  const mins = i * 10;
-  const h = String(Math.floor(mins / 60)).padStart(2, "0");
-  const m = String(mins % 60).padStart(2, "0");
-  return `${h}:${m}`;
-});
 
 // ---------- date helpers (local time, no UTC drift) ----------
 function todayISO() {
@@ -50,23 +38,13 @@ function fmtDateLabel(iso) {
   const [, m, d] = iso.split("-").map(Number);
   return { m, d, wd: WEEKDAY_JA[dt.getDay()] };
 }
-function parseTimeToMinutes(value) {
-  if (!value) return null;
-  const [h, m] = value.split(":").map(Number);
-  if (Number.isNaN(h) || Number.isNaN(m)) return null;
-  return h * 60 + m;
-}
-function calcHours(start, end, breakTime) {
+function calcHours(start, end) {
   if (!start || !end) return "";
-  const startMinutes = parseTimeToMinutes(start);
-  const endMinutes = parseTimeToMinutes(end);
-  const breakMinutes = parseTimeToMinutes(breakTime) || 0;
-  if (startMinutes === null || endMinutes === null) return "";
-  let mins = endMinutes - startMinutes;
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  let mins = eh * 60 + em - (sh * 60 + sm);
   if (mins <= 0) mins += 24 * 60;
-  const worked = mins - breakMinutes;
-  if (worked <= 0) return "0.0";
-  return (Math.round((worked / 60) * 10) / 10).toFixed(1);
+  return (Math.round((mins / 60) * 10) / 10).toString();
 }
 // Period runs 21st of a month through 20th of the next month.
 function getPeriodBounds(iso) {
@@ -121,7 +99,6 @@ const emptyForm = (date) => ({
   count: "",
   workStart: "",
   workEnd: "",
-  breakTime: "",
   workHours: "",
   hoursOverride: false,
   notes: "",
@@ -196,11 +173,10 @@ export default function WorkLog() {
   const updateField = (key, value) => {
     setForm((f) => {
       const next = { ...f, [key]: value };
-      if ((key === "workStart" || key === "workEnd" || key === "breakTime") && !f.hoursOverride) {
+      if ((key === "workStart" || key === "workEnd") && !f.hoursOverride) {
         next.workHours = calcHours(
           key === "workStart" ? value : f.workStart,
-          key === "workEnd" ? value : f.workEnd,
-          key === "breakTime" ? value : f.breakTime
+          key === "workEnd" ? value : f.workEnd
         );
       }
       return next;
@@ -241,7 +217,7 @@ export default function WorkLog() {
 
   const handleExportCsv = () => {
     const rows = [
-      ["日付", "曜日", "売上", "追加売上", "チップ", "回数", "勤務開始", "勤務終了", "休憩時間", "勤務時間", "備考"].join(","),
+      ["日付", "曜日", "売上", "追加売上", "チップ", "回数", "勤務開始", "勤務終了", "勤務時間", "備考"].join(","),
     ];
     [...entries]
       .sort((a, b) => (a.date < b.date ? -1 : 1))
@@ -257,7 +233,6 @@ export default function WorkLog() {
             e.count || 0,
             e.workStart || "",
             e.workEnd || "",
-            e.breakTime || "",
             e.workHours || "",
             csvEscape(e.notes || ""),
           ].join(",")
@@ -324,7 +299,7 @@ export default function WorkLog() {
       <header className="px-5 pt-7 pb-4 border-b border-[#232A36] max-w-[560px] mx-auto">
         <div className="text-[11px] tracking-[0.25em] text-[#FFB454] font-meter font-medium">DAILY LOG</div>
         <h1 className="font-display text-2xl mt-1" style={{ fontWeight: 900 }}>
-          masato taxi ai
+          運行日報
         </h1>
         <p className="text-[13px] text-[#7C8496] mt-0.5">売上・チップ・勤務時間をその日のうちに</p>
       </header>
@@ -420,13 +395,20 @@ export default function WorkLog() {
               />
             </Field>
             <Field label="勤務開始">
-              <TimeSelect value={form.workStart} onChange={(v) => updateField("workStart", v)} options={WORK_TIME_OPTIONS} />
+              <input
+                type="time"
+                value={form.workStart}
+                onChange={(e) => updateField("workStart", e.target.value)}
+                className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-5 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFB454]"
+              />
             </Field>
             <Field label="勤務終了">
-              <TimeSelect value={form.workEnd} onChange={(v) => updateField("workEnd", v)} options={WORK_TIME_OPTIONS} />
-            </Field>
-            <Field label="休憩時間">
-              <TimeSelect value={form.breakTime} onChange={(v) => updateField("breakTime", v)} options={BREAK_TIME_OPTIONS} />
+              <input
+                type="time"
+                value={form.workEnd}
+                onChange={(e) => updateField("workEnd", e.target.value)}
+                className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-5 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFB454]"
+              />
             </Field>
           </div>
 
@@ -698,22 +680,5 @@ function YenInput({ value, onChange }) {
         className="w-full bg-[#181D25] border border-[#232A36] rounded-xl pl-9 pr-4 py-5 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFB454]"
       />
     </div>
-  );
-}
-
-function TimeSelect({ value, onChange, options }) {
-  return (
-    <select
-      value={value || ""}
-      onChange={(e) => onChange(e.target.value)}
-      className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-5 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFB454]"
-    >
-      <option value="">--:--</option>
-      {options.map((opt) => (
-        <option key={opt} value={opt}>
-          {opt}
-        </option>
-      ))}
-    </select>
   );
 }
