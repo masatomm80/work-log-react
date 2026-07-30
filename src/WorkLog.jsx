@@ -14,6 +14,12 @@ import {
 const STORAGE_KEY = "workLogEntries";
 const PRESET_TAGS = ["日赤", "日赤夜", "寝台", "宿直", "横関", "横関夜", "早出", "明け", "点検書類提出"];
 const WEEKDAY_JA = ["日", "月", "火", "水", "木", "金", "土"];
+const FIRST_WORKDAY = "2024-12-22";
+const DAY_STATUS = {
+  WORKDAY: "workday",
+  DAYOFF: "dayoff",
+  HOLIDAY: "holiday",
+};
 const WORK_TIME_OPTIONS = Array.from({ length: 24 * 6 }, (_, i) => {
   const mins = i * 10;
   const h = String(Math.floor(mins / 60)).padStart(2, "0");
@@ -43,6 +49,39 @@ function addDays(iso, n) {
   const dt = parseISO(iso);
   dt.setDate(dt.getDate() + n);
   return toISO(dt);
+}
+function diffDays(a, b) {
+  const d1 = parseISO(a);
+  const d2 = parseISO(b);
+  return Math.round((d1 - d2) / 86400000);
+}
+function isWorkDay(iso) {
+  const diff = diffDays(iso, FIRST_WORKDAY);
+  return diff >= 0 && diff % 2 === 0;
+}
+function getEffectiveDayStatus(iso, record) {
+  if (record?.dayStatus === DAY_STATUS.HOLIDAY && isWorkDay(iso)) {
+    return DAY_STATUS.HOLIDAY;
+  }
+  return isWorkDay(iso) ? DAY_STATUS.WORKDAY : DAY_STATUS.DAYOFF;
+}
+function getStatusLabel(status) {
+  if (status === DAY_STATUS.HOLIDAY) return "公休日";
+  if (status === DAY_STATUS.DAYOFF) return "明け休み";
+  return "勤務日";
+}
+function hasFormData(form) {
+  return Boolean(
+    form.sales ||
+      form.salesExtra ||
+      form.tip ||
+      form.count ||
+      form.workStart ||
+      form.workEnd ||
+      form.breakTime ||
+      form.workHours ||
+      form.notes
+  );
 }
 function fmtDateLabel(iso) {
   if (!iso) return { m: 0, d: 0, wd: "" };
@@ -125,7 +164,16 @@ const emptyForm = (date) => ({
   workHours: "",
   hoursOverride: false,
   notes: "",
+  dayStatus: getEffectiveDayStatus(date, null),
 });
+
+function normalizeForm(date, existing) {
+  return {
+    ...emptyForm(date),
+    ...(existing || {}),
+    dayStatus: getEffectiveDayStatus(date, existing),
+  };
+}
 
 function downloadBlob(content, mime, filename) {
   const blob = new Blob([content], { type: mime });
@@ -158,8 +206,8 @@ export default function WorkLog() {
 
   useEffect(() => {
     const existing = entries.find((e) => e.date === selectedDate);
-    setForm(existing ? { ...existing } : emptyForm(selectedDate));
-  }, [selectedDate]); // eslint-disable-line
+    setForm(existing ? normalizeForm(selectedDate, existing) : emptyForm(selectedDate));
+  }, [selectedDate, entries]);
 
   const sortedEntries = useMemo(
     () => [...entries].sort((a, b) => (a.date < b.date ? 1 : -1)),
@@ -218,7 +266,7 @@ export default function WorkLog() {
 
   const handleSave = () => {
     const id = form.id || `${form.date}-${Date.now()}`;
-    const record = { ...form, id };
+    const record = { ...form, dayStatus: getEffectiveDayStatus(form.date, form), id };
     const next = entries.some((e) => e.id === id)
       ? entries.map((e) => (e.id === id ? record : e))
       : [...entries.filter((e) => e.date !== form.date), record];
@@ -313,10 +361,25 @@ export default function WorkLog() {
   };
 
   const { m, d, wd } = fmtDateLabel(selectedDate);
+  const effectiveStatus = getEffectiveDayStatus(selectedDate, form);
+  const isWorkday = effectiveStatus === DAY_STATUS.WORKDAY;
+  const isHoliday = effectiveStatus === DAY_STATUS.HOLIDAY;
+  const isDayOff = effectiveStatus === DAY_STATUS.DAYOFF;
+  const canEditFields = isWorkday;
+  const statusLabel = getStatusLabel(effectiveStatus);
   const totalSales = (Number(form.sales) || 0) + (Number(form.salesExtra) || 0);
   const activeTags = form.notes ? form.notes.split(/[\s、,　]+/).filter(Boolean) : [];
   const periodStartLbl = fmtDateLabel(periodBounds.start);
   const periodEndLbl = fmtDateLabel(periodBounds.end);
+
+  const handleToggleHoliday = () => {
+    if (!isWorkday) return;
+    if (!isHoliday && hasFormData(form)) {
+      const proceed = window.confirm("入力済みの内容は保持したまま、公休日に切り替えますか？");
+      if (!proceed) return;
+    }
+    setForm((f) => ({ ...f, dayStatus: isHoliday ? DAY_STATUS.WORKDAY : DAY_STATUS.HOLIDAY }));
+  };
 
   return (
     <div className="min-h-screen bg-[#12151A] font-body text-[#EDEFF3] pb-16">
@@ -352,6 +415,7 @@ export default function WorkLog() {
           <input
             ref={dateInputRef}
             type="date"
+            min={FIRST_WORKDAY}
             value={selectedDate}
             onChange={(e) => e.target.value && setSelectedDate(e.target.value)}
             className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
@@ -367,6 +431,30 @@ export default function WorkLog() {
       </div>
 
       <div className="max-w-[560px] mx-auto">
+        <div className="mx-5 mt-4 rounded-2xl border border-[#232A36] bg-[#171C24] px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-[10px] tracking-[0.2em] text-[#7C8496] font-meter">DATE STATUS</div>
+              <div className="font-medium text-[#EDEFF3] mt-1">{statusLabel}</div>
+            </div>
+            {isWorkday ? (
+              <button
+                onClick={handleToggleHoliday}
+                className={`flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition-colors ${
+                  isHoliday
+                    ? "border-[#FFB454] bg-[#FFB454]/10 text-[#FFB454]"
+                    : "border-[#2A3140] text-[#8B93A1]"
+                }`}
+              >
+                <span className={`flex h-4 w-4 items-center justify-center rounded border ${isHoliday ? "border-[#FFB454] bg-[#FFB454] text-[#12151A]" : "border-[#8B93A1]"}`}>
+                  {isHoliday ? "✓" : ""}
+                </span>
+                公休日
+              </button>
+            ) : null}
+          </div>
+        </div>
+
         {/* Meter panel */}
         <div className="mx-5 mt-5 rounded-2xl bg-[#181D25] border border-[#232A36] overflow-hidden">
           <div className="border-l-4 border-[#FFB454] px-5 py-5">
@@ -401,13 +489,13 @@ export default function WorkLog() {
         <div className="mx-5 mt-5 space-y-5">
           <div className="grid grid-cols-2 gap-4">
             <Field label="売上">
-              <YenInput value={form.sales} onChange={(v) => updateField("sales", v)} />
+              <YenInput value={form.sales} onChange={(v) => updateField("sales", v)} disabled={!canEditFields} />
             </Field>
             <Field label="追加売上（任意）">
-              <YenInput value={form.salesExtra} onChange={(v) => updateField("salesExtra", v)} />
+              <YenInput value={form.salesExtra} onChange={(v) => updateField("salesExtra", v)} disabled={!canEditFields} />
             </Field>
             <Field label="チップ">
-              <YenInput value={form.tip} onChange={(v) => updateField("tip", v)} />
+              <YenInput value={form.tip} onChange={(v) => updateField("tip", v)} disabled={!canEditFields} />
             </Field>
             <Field label="回数">
               <input
@@ -416,17 +504,18 @@ export default function WorkLog() {
                 value={form.count}
                 onChange={(e) => updateField("count", e.target.value)}
                 placeholder="0"
-                className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-5 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFB454]"
+                disabled={!canEditFields}
+                className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-5 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFB454] disabled:opacity-60"
               />
             </Field>
             <Field label="勤務開始">
-              <TimeSelect value={form.workStart} onChange={(v) => updateField("workStart", v)} options={WORK_TIME_OPTIONS} />
+              <TimeSelect value={form.workStart} onChange={(v) => updateField("workStart", v)} options={WORK_TIME_OPTIONS} disabled={!canEditFields} />
             </Field>
             <Field label="勤務終了">
-              <TimeSelect value={form.workEnd} onChange={(v) => updateField("workEnd", v)} options={WORK_TIME_OPTIONS} />
+              <TimeSelect value={form.workEnd} onChange={(v) => updateField("workEnd", v)} options={WORK_TIME_OPTIONS} disabled={!canEditFields} />
             </Field>
             <Field label="休憩時間">
-              <TimeSelect value={form.breakTime} onChange={(v) => updateField("breakTime", v)} options={BREAK_TIME_OPTIONS} />
+              <TimeSelect value={form.breakTime} onChange={(v) => updateField("breakTime", v)} options={BREAK_TIME_OPTIONS} disabled={!canEditFields} />
             </Field>
           </div>
 
@@ -437,11 +526,12 @@ export default function WorkLog() {
               value={form.workHours}
               onChange={(e) => setForm((f) => ({ ...f, workHours: e.target.value, hoursOverride: true }))}
               placeholder="0.0"
-              className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-5 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFB454]"
+              disabled={!canEditFields}
+              className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-5 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFB454] disabled:opacity-60"
             />
           </Field>
 
-          <Field label="備考">
+          <Field label="コメント">
             <div className="flex flex-wrap gap-2 mb-3">
               {PRESET_TAGS.map((tag) => {
                 const active = activeTags.includes(tag);
@@ -557,7 +647,14 @@ export default function WorkLog() {
             <div className="space-y-2">
               {sortedEntries.map((entry) => {
                 const label = fmtDateLabel(entry.date);
+                const entryStatus = getEffectiveDayStatus(entry.date, entry);
                 const isSelected = entry.date === selectedDate;
+                const statusBadgeClass =
+                  entryStatus === DAY_STATUS.HOLIDAY
+                    ? "bg-[#FFB454]/10 text-[#FFB454]"
+                    : entryStatus === DAY_STATUS.DAYOFF
+                      ? "bg-[#2A3140] text-[#8B93A1]"
+                      : "bg-[#6EE7A8]/10 text-[#6EE7A8]";
                 return (
                   <div
                     key={entry.id}
@@ -574,6 +671,7 @@ export default function WorkLog() {
                         <span className="text-[12px] text-[#7C8496]">({label.wd})</span>
                       </div>
                       <div className="flex items-center gap-3 font-meter text-[13px] text-[#EDEFF3] min-w-0">
+                        <span className={`rounded-full px-2 py-1 text-[11px] ${statusBadgeClass}`}>{getStatusLabel(entryStatus)}</span>
                         <span className="truncate">
                           ¥{yen((Number(entry.sales) || 0) + (Number(entry.salesExtra) || 0))}
                         </span>
@@ -685,7 +783,7 @@ function Field({ label, children }) {
   );
 }
 
-function YenInput({ value, onChange }) {
+function YenInput({ value, onChange, disabled = false }) {
   return (
     <div className="relative">
       <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[#7C8496] font-meter text-lg">¥</span>
@@ -695,18 +793,20 @@ function YenInput({ value, onChange }) {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="0"
-        className="w-full bg-[#181D25] border border-[#232A36] rounded-xl pl-9 pr-4 py-5 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFB454]"
+        disabled={disabled}
+        className="w-full bg-[#181D25] border border-[#232A36] rounded-xl pl-9 pr-4 py-5 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFB454] disabled:opacity-60"
       />
     </div>
   );
 }
 
-function TimeSelect({ value, onChange, options }) {
+function TimeSelect({ value, onChange, options, disabled = false }) {
   return (
     <select
       value={value || ""}
       onChange={(e) => onChange(e.target.value)}
-      className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-5 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFB454]"
+      disabled={disabled}
+      className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-5 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFB454] disabled:opacity-60"
     >
       <option value="">--:--</option>
       {options.map((opt) => (
