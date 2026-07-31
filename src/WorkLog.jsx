@@ -873,7 +873,9 @@ export default function WorkLog() {
               ) : null}
 
               <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-4">
-                <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter">終了時</div>
+                {!isLegacyMode ? (
+                  <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter">終了時</div>
+                ) : null}
                 {!isLegacyMode ? (
                   <div className="grid grid-cols-2 gap-4">
                     <Field label="休憩時間">
@@ -885,7 +887,7 @@ export default function WorkLog() {
                   </div>
                 ) : null}
 
-                <Field label="勤務時間（自動計算・手入力で上書き可）">
+                <Field label="勤務時間">
                   <input
                     type="text"
                     inputMode="decimal"
