@@ -12,6 +12,20 @@ import {
 } from "lucide-react";
 
 const STORAGE_KEY = "workLogEntries";
+const DUTY_TAGS = [
+  "日赤",
+  "日赤夜①",
+  "日赤夜②",
+  "寝台①",
+  "寝台②",
+  "横関",
+  "横関夜①",
+  "横関夜②",
+  "宿直",
+  "研修",
+  "貸切",
+  "赤字（出勤）",
+];
 const PRESET_TAGS = ["日赤", "日赤夜", "寝台", "宿直", "横関", "横関夜", "早出", "明け", "点検書類提出"];
 const WEATHER_OPTIONS = [
   { value: "sunny", label: "晴れ" },
@@ -786,6 +800,16 @@ export default function WorkLog() {
                 </div>
               ) : null}
 
+              <Field label="コメント">
+                <textarea
+                  value={form.notes}
+                  onChange={(e) => updateField("notes", e.target.value)}
+                  placeholder="自由に入力"
+                  rows={3}
+                  className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-4 text-[17px] text-[#EDEFF3] focus:outline-none focus:border-[#FFB454] resize-none"
+                />
+              </Field>
+
               <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-4">
                 <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter">営業データ</div>
                 <div className="grid grid-cols-2 gap-4">
@@ -909,28 +933,10 @@ export default function WorkLog() {
                 </Field>
 
                 <Field label="コメント">
-                  <div className="flex flex-wrap gap-2 mb-3">
-                    {PRESET_TAGS.map((tag) => {
-                      const active = activeTags.includes(tag);
-                      return (
-                        <button
-                          key={tag}
-                          onClick={() => toggleTag(tag)}
-                          className={`text-[14px] px-3.5 py-2 rounded-full border transition-colors ${
-                            active
-                              ? "bg-[#FFB454] border-[#FFB454] text-[#12151A] font-medium"
-                              : "border-[#2A3140] text-[#8B93A1] active:border-[#FFB454]"
-                          }`}
-                        >
-                          {tag}
-                        </button>
-                      );
-                    })}
-                  </div>
                   <textarea
                     value={form.notes}
                     onChange={(e) => updateField("notes", e.target.value)}
-                    placeholder="タグをタップ、または自由に入力"
+                    placeholder="自由に入力"
                     rows={3}
                     className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-4 text-[17px] text-[#EDEFF3] focus:outline-none focus:border-[#FFB454] resize-none"
                   />
