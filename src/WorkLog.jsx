@@ -696,8 +696,15 @@ export default function WorkLog() {
                   ¥{yen(totalSales)}
                 </div>
                 {form.salesExtra ? (
-                  <div className="text-[12px] text-[#7C8496] mt-1 font-meter">
-                    内訳 {yen(form.sales)} + {yen(form.salesExtra)}
+                  <div className="mt-3 space-y-1 text-[#7C8496] text-[12px] font-meter">
+                    <div className="flex items-center justify-between gap-4">
+                      <span>メーター</span>
+                      <span className="font-medium text-[#EDEFF3]">¥{yen(form.sales)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <span>メーター外</span>
+                      <span className="font-medium text-[#EDEFF3]">¥{yen(form.salesExtra)}</span>
+                    </div>
                   </div>
                 ) : null}
               </div>
