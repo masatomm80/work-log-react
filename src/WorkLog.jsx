@@ -101,8 +101,9 @@ function inferRecordFormat(entry) {
 }
 function ensureRecordFormat(entry) {
   if (!entry || typeof entry !== "object") return entry;
-  if (entry.recordFormat) return entry;
-  return { ...entry, recordFormat: inferRecordFormat(entry) };
+  const recordFormat = entry.recordFormat || inferRecordFormat(entry);
+  const dutyTags = Array.isArray(entry.dutyTags) ? entry.dutyTags : [];
+  return { ...entry, recordFormat, dutyTags };
 }
 function isLegacyRecord(entry) {
   return inferRecordFormat(entry) === "legacy";
@@ -243,7 +244,11 @@ function loadEntries() {
     const parsed = raw ? JSON.parse(raw) : [];
     if (!Array.isArray(parsed)) return [];
     const normalized = parsed.map(ensureRecordFormat);
-    const needsPersist = normalized.some((entry, index) => !entry.recordFormat || entry.recordFormat !== parsed[index]?.recordFormat);
+    const needsPersist = normalized.some((entry, index) =>
+      !entry.recordFormat ||
+      entry.recordFormat !== parsed[index]?.recordFormat ||
+      !Array.isArray(parsed[index]?.dutyTags)
+    );
     if (needsPersist) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
     }
@@ -285,6 +290,7 @@ const emptyForm = (date) => ({
   workHours: "",
   hoursOverride: false,
   notes: "",
+  dutyTags: [],
   recordFormat: getRecordFormatFromDate(date),
   dayStatus: getEffectiveDayStatus(date, null),
 });
@@ -324,6 +330,7 @@ export default function WorkLog() {
   const [periodAnchor, setPeriodAnchor] = useState(todayISO());
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [toast, setToast] = useState(null);
+  const [dutyStampOpen, setDutyStampOpen] = useState(false);
   const dateInputRef = useRef(null);
   const restoreInputRef = useRef(null);
   const toastTimer = useRef(null);
@@ -349,6 +356,15 @@ export default function WorkLog() {
     () => entries.filter((e) => e.date >= periodBounds.start && e.date <= periodBounds.end),
     [entries, periodBounds]
   );
+  const selectedDutyTags = Array.isArray(form.dutyTags) ? form.dutyTags : [];
+  const dutyStampSummary = selectedDutyTags.length > 0 ? selectedDutyTags.join("　") : "未設定";
+  const toggleDutyTag = (tag) => {
+    setForm((f) => {
+      const current = Array.isArray(f.dutyTags) ? f.dutyTags : [];
+      const next = current.includes(tag) ? current.filter((item) => item !== tag) : [...current, tag];
+      return { ...f, dutyTags: next };
+    });
+  };
   const periodTotals = useMemo(
     () =>
       periodEntries.reduce(
@@ -673,29 +689,46 @@ export default function WorkLog() {
             ) : null}
           </div>
         </div>
-
-        {isWorkday ? (
-          <div className="mx-5 mt-3 rounded-2xl border border-[#232A36] bg-[#171C24] px-4 py-3">
-            <div>
-              <div className="text-[10px] tracking-[0.2em] text-[#7C8496] font-meter">売上目標</div>
-              <div className="font-medium text-[#EDEFF3] mt-1">目標 ¥{yen(weekdayTarget)}</div>
-            </div>
-            <div className="mt-3 grid grid-cols-3 gap-2">
-              <div className="rounded-xl bg-[#181D25] px-3 py-2">
-                <div className="text-[10px] text-[#7C8496]">現在の売上</div>
-                <div className="font-meter text-sm text-[#EDEFF3] mt-0.5">¥{yen(currentSalesTotal)}</div>
+          <div className="mx-5 mt-3 rounded-2xl border border-[#232A36] bg-[#171C24] overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setDutyStampOpen((open) => !open)}
+              className="w-full flex items-center justify-between gap-2 px-4 py-4 text-left"
+            >
+              <div>
+                <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter">DUTY STAMP</div>
+                <div className="text-[12px] text-[#8B93A1] mt-1">今日の勤務予定・当番</div>
               </div>
-              <div className="rounded-xl bg-[#181D25] px-3 py-2">
-                <div className="text-[10px] text-[#7C8496]">残額</div>
-                <div className="font-meter text-sm text-[#EDEFF3] mt-0.5">¥{yen(targetRemaining)}</div>
+              <div className="text-[13px] text-[#7C8496]">{dutyStampOpen ? "−" : "+"}</div>
+            </button>
+            {dutyStampOpen ? (
+              <div className="border-t border-[#232A36] px-4 py-4 space-y-3 bg-[#171C24]">
+                <div className="grid grid-cols-2 gap-2">
+                  {DUTY_TAGS.map((tag) => {
+                    const selected = selectedDutyTags.includes(tag);
+                    return (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => toggleDutyTag(tag)}
+                        className={`rounded-full border px-3 py-2 text-sm transition-colors ${
+                          selected
+                            ? "border-[#FFB454] bg-[#FFB454] text-[#12151A]"
+                            : "border-[#2A3140] text-[#8B93A1] hover:border-[#FFB454]"
+                        }`}
+                      >
+                        {tag}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-              <div className="rounded-xl bg-[#181D25] px-3 py-2">
-                <div className="text-[10px] text-[#7C8496]">達成率</div>
-                <div className="font-meter text-sm text-[#EDEFF3] mt-0.5">{achievementRate.toFixed(1)}%</div>
+            ) : (
+              <div className="border-t border-[#232A36] px-4 py-3 text-sm text-[#EDEFF3]">
+                {dutyStampSummary}
               </div>
-            </div>
+            )}
           </div>
-        ) : null}
 
         {isWorkday ? (
           <>
