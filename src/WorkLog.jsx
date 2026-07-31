@@ -798,49 +798,53 @@ export default function WorkLog() {
                       className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-5 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFB454]"
                     />
                   </Field>
-                  <Field label="手上げ乗車回数" helperText="通常の回数に含まれる手上げ乗車の回数" warning={handRaisedWarning}>
-                    <NumberInput
-                      value={form.handRaisedCount}
-                      onChange={(v) => updateField("handRaisedCount", v)}
-                      min={0}
-                      step="1"
-                      placeholder="0"
-                    />
-                  </Field>
-                  <Field label="アプリ乗車回数" helperText="通常の回数に含まれるアプリ乗車の回数" warning={appRideWarning}>
-                    <NumberInput
-                      value={form.appRideCount}
-                      onChange={(v) => updateField("appRideCount", v)}
-                      min={0}
-                      step="1"
-                      placeholder="0"
-                    />
-                  </Field>
-                  <Field label="会社無線配車回数" helperText="自動計算" warning={rideTotalWarning}>
-                    <div className="rounded-xl border border-[#232A36] bg-[#181D25] px-4 py-5 text-xl font-meter text-[#EDEFF3]">
-                      {companyRadioCountDisplay}
-                    </div>
-                  </Field>
-                  <Field label="走行距離" helperText="km" warning={distanceWarning}>
-                    <NumberInput
-                      value={form.totalDistance}
-                      onChange={(v) => updateField("totalDistance", v)}
-                      min={0}
-                      step="0.1"
-                      placeholder="0"
-                      unit="km"
-                    />
-                  </Field>
-                  <Field label="営業距離" helperText="km" warning={distanceWarning}>
-                    <NumberInput
-                      value={form.occupiedDistance}
-                      onChange={(v) => updateField("occupiedDistance", v)}
-                      min={0}
-                      step="0.1"
-                      placeholder="0"
-                      unit="km"
-                    />
-                  </Field>
+                  {!isLegacyMode ? (
+                    <>
+                      <Field label="手上げ乗車回数" helperText="通常の回数に含まれる手上げ乗車の回数" warning={handRaisedWarning}>
+                        <NumberInput
+                          value={form.handRaisedCount}
+                          onChange={(v) => updateField("handRaisedCount", v)}
+                          min={0}
+                          step="1"
+                          placeholder="0"
+                        />
+                      </Field>
+                      <Field label="アプリ乗車回数" helperText="通常の回数に含まれるアプリ乗車の回数" warning={appRideWarning}>
+                        <NumberInput
+                          value={form.appRideCount}
+                          onChange={(v) => updateField("appRideCount", v)}
+                          min={0}
+                          step="1"
+                          placeholder="0"
+                        />
+                      </Field>
+                      <Field label="会社無線配車回数" helperText="自動計算" warning={rideTotalWarning}>
+                        <div className="rounded-xl border border-[#232A36] bg-[#181D25] px-4 py-5 text-xl font-meter text-[#EDEFF3]">
+                          {companyRadioCountDisplay}
+                        </div>
+                      </Field>
+                      <Field label="走行距離" helperText="km" warning={distanceWarning}>
+                        <NumberInput
+                          value={form.totalDistance}
+                          onChange={(v) => updateField("totalDistance", v)}
+                          min={0}
+                          step="0.1"
+                          placeholder="0"
+                          unit="km"
+                        />
+                      </Field>
+                      <Field label="営業距離" helperText="km" warning={distanceWarning}>
+                        <NumberInput
+                          value={form.occupiedDistance}
+                          onChange={(v) => updateField("occupiedDistance", v)}
+                          min={0}
+                          step="0.1"
+                          placeholder="0"
+                          unit="km"
+                        />
+                      </Field>
+                    </>
+                  ) : null}
                 </div>
               </div>
 
