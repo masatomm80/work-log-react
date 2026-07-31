@@ -800,15 +800,17 @@ export default function WorkLog() {
                 </div>
               ) : null}
 
-              <Field label="コメント">
-                <textarea
-                  value={form.notes}
-                  onChange={(e) => updateField("notes", e.target.value)}
-                  placeholder="自由に入力"
-                  rows={3}
-                  className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-4 text-[17px] text-[#EDEFF3] focus:outline-none focus:border-[#FFB454] resize-none"
-                />
-              </Field>
+              {!isLegacyMode ? (
+                <Field label="コメント">
+                  <textarea
+                    value={form.notes}
+                    onChange={(e) => updateField("notes", e.target.value)}
+                    placeholder="自由に入力"
+                    rows={3}
+                    className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-4 text-[17px] text-[#EDEFF3] focus:outline-none focus:border-[#FFB454] resize-none"
+                  />
+                </Field>
+              ) : null}
 
               <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-4">
                 <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter">営業データ</div>
@@ -932,15 +934,17 @@ export default function WorkLog() {
                   />
                 </Field>
 
-                <Field label="コメント">
-                  <textarea
-                    value={form.notes}
-                    onChange={(e) => updateField("notes", e.target.value)}
-                    placeholder="自由に入力"
-                    rows={3}
-                    className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-4 text-[17px] text-[#EDEFF3] focus:outline-none focus:border-[#FFB454] resize-none"
-                  />
-                </Field>
+                {isLegacyMode ? (
+                  <Field label="コメント">
+                    <textarea
+                      value={form.notes}
+                      onChange={(e) => updateField("notes", e.target.value)}
+                      placeholder="自由に入力"
+                      rows={3}
+                      className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-4 text-[17px] text-[#EDEFF3] focus:outline-none focus:border-[#FFB454] resize-none"
+                    />
+                  </Field>
+                ) : null}
 
                 <div className="flex gap-2 pt-1">
                   <button
