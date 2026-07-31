@@ -76,6 +76,26 @@ function getStatusLabel(status) {
   if (status === DAY_STATUS.DAYOFF) return "明け休み";
   return "勤務日";
 }
+function getRecordFormatFromDate(date) {
+  if (!date) return "current";
+  return date >= "2024-12-21" && date <= "2026-07-30" ? "legacy" : "current";
+}
+function inferRecordFormat(entry) {
+  if (!entry) return "current";
+  if (entry.recordFormat) return entry.recordFormat;
+  return getRecordFormatFromDate(entry.date);
+}
+function ensureRecordFormat(entry) {
+  if (!entry || typeof entry !== "object") return entry;
+  if (entry.recordFormat) return entry;
+  return { ...entry, recordFormat: inferRecordFormat(entry) };
+}
+function isLegacyRecord(entry) {
+  return inferRecordFormat(entry) === "legacy";
+}
+function isCurrentRecord(entry) {
+  return inferRecordFormat(entry) === "current";
+}
 function hasFormData(form) {
   return Boolean(
     form.sales ||
@@ -207,7 +227,13 @@ function loadEntries() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    const normalized = parsed.map(ensureRecordFormat);
+    const needsPersist = normalized.some((entry, index) => !entry.recordFormat || entry.recordFormat !== parsed[index]?.recordFormat);
+    if (needsPersist) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+    }
+    return normalized;
   } catch (e) {
     console.error("読み込みエラー", e);
     return [];
@@ -245,15 +271,17 @@ const emptyForm = (date) => ({
   workHours: "",
   hoursOverride: false,
   notes: "",
+  recordFormat: getRecordFormatFromDate(date),
   dayStatus: getEffectiveDayStatus(date, null),
 });
 
 function normalizeForm(date, existing) {
+  const entry = ensureRecordFormat(existing || {});
   return {
     ...emptyForm(date),
-    ...(existing || {}),
-    weather: Array.isArray(existing?.weather) ? existing.weather : [],
-    dayStatus: getEffectiveDayStatus(date, existing),
+    ...entry,
+    weather: Array.isArray(entry?.weather) ? entry.weather : [],
+    dayStatus: getEffectiveDayStatus(date, entry),
   };
 }
 
@@ -275,7 +303,7 @@ function csvEscape(v) {
 }
 
 export default function WorkLog() {
-  const [entries, setEntries] = useState(() => loadEntries());
+  const [entries, setEntries] = useState(() => loadEntries().map(ensureRecordFormat));
   const [saveState, setSaveState] = useState("idle"); // idle | saved | error
   const [selectedDate, setSelectedDate] = useState(todayISO());
   const [form, setForm] = useState(emptyForm(todayISO()));
@@ -285,6 +313,12 @@ export default function WorkLog() {
   const dateInputRef = useRef(null);
   const restoreInputRef = useRef(null);
   const toastTimer = useRef(null);
+
+  const currentEntries = useMemo(() => entries.filter(isCurrentRecord), [entries]);
+  const legacyEntries = useMemo(() => entries.filter(isLegacyRecord), [entries]);
+  const activeRecordFormat = form.recordFormat || getRecordFormatFromDate(selectedDate);
+  const isLegacyMode = activeRecordFormat === "legacy";
+  const isCurrentMode = activeRecordFormat === "current";
 
   useEffect(() => {
     const existing = entries.find((e) => e.date === selectedDate);
@@ -353,31 +387,40 @@ export default function WorkLog() {
   };
 
   const handleSave = () => {
+    const isLegacyForm = isLegacyRecord(form);
     const handRaisedValue = Number(form.handRaisedCount) || 0;
     const appRideValue = Number(form.appRideCount) || 0;
     const countValue = Number(form.count) || 0;
     const occupiedValue = Number(form.occupiedDistance) || 0;
     const totalDistanceValue = Number(form.totalDistance) || 0;
 
-    if (handRaisedValue > countValue) {
-      showToast("手上げ乗車回数は通常の回数を超えません");
-      return;
-    }
-    if (appRideValue > countValue) {
-      showToast("アプリ乗車回数は通常の回数を超えません");
-      return;
-    }
-    if (handRaisedValue + appRideValue > countValue) {
-      showToast("手上げ乗車回数とアプリ乗車回数の合計が通常の回数を超えます");
-      return;
-    }
-    if (occupiedValue > totalDistanceValue) {
-      showToast("営業距離は走行距離を超えません");
-      return;
+    if (!isLegacyForm) {
+      if (handRaisedValue > countValue) {
+        showToast("手上げ乗車回数は通常の回数を超えません");
+        return;
+      }
+      if (appRideValue > countValue) {
+        showToast("アプリ乗車回数は通常の回数を超えません");
+        return;
+      }
+      if (handRaisedValue + appRideValue > countValue) {
+        showToast("手上げ乗車回数とアプリ乗車回数の合計が通常の回数を超えます");
+        return;
+      }
+      if (occupiedValue > totalDistanceValue) {
+        showToast("営業距離は走行距離を超えません");
+        return;
+      }
     }
 
     const id = form.id || `${form.date}-${Date.now()}`;
-    const record = { ...form, dayStatus: getEffectiveDayStatus(form.date, form), id };
+    const recordFormat = inferRecordFormat(form);
+    const record = {
+      ...form,
+      dayStatus: getEffectiveDayStatus(form.date, form),
+      recordFormat,
+      id,
+    };
     const next = entries.some((e) => e.id === id)
       ? entries.map((e) => (e.id === id ? record : e))
       : [...entries.filter((e) => e.date !== form.date), record];
@@ -448,6 +491,12 @@ export default function WorkLog() {
         showToast("バックアップ形式が正しくありません");
         return;
       }
+      imported = imported.map((r) => {
+        if (!r || !r.date) return r;
+        const normalized = ensureRecordFormat(r);
+        if (!normalized.id) normalized.id = `${normalized.date}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        return normalized;
+      });
       const validCount = imported.filter((r) => r && r.date).length;
       const proceed = window.confirm(
         `${validCount}件のデータを読み込みます。同じ日付の既存データは上書きされます。よろしいですか？`
@@ -458,11 +507,10 @@ export default function WorkLog() {
       entries.forEach((en) => (byDate[en.date] = en));
       imported.forEach((r) => {
         if (r && r.date) {
-          if (!r.id) r.id = `${r.date}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
           byDate[r.date] = r;
         }
       });
-      const merged = Object.values(byDate);
+      const merged = Object.values(byDate).map(ensureRecordFormat);
       setEntries(merged);
       persistEntries(merged);
       showToast("復元しました");
@@ -669,62 +717,64 @@ export default function WorkLog() {
 
             {/* Form */}
             <div className="mx-5 mt-5 space-y-5">
-              <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-4">
-                <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter">朝入力</div>
-                <div className="grid grid-cols-2 gap-4">
-                  <Field label="体調">
-                    <div className="flex flex-wrap gap-2">
-                      {[
-                        { value: "good", label: "◉ 良", className: "border-[#6EE7A8]/40 text-[#6EE7A8]" },
-                        { value: "normal", label: "○ 並", className: "border-[#FFB454]/40 text-[#FFB454]" },
-                        { value: "bad", label: "▲ 悪", className: "border-[#FF6B57]/40 text-[#FF6B57]" },
-                      ].map((option) => {
-                        const active = form.condition === option.value;
-                        return (
-                          <button
-                            key={option.value}
-                            onClick={() => updateField("condition", option.value)}
-                            className={`rounded-full border px-3 py-2 text-sm transition-colors ${
-                              active ? `${option.className} bg-[#1F242C]` : "border-[#2A3140] text-[#8B93A1]"
-                            }`}
-                          >
-                            {option.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </Field>
-                  <Field label="天気">
-                    <div className="flex flex-wrap gap-2">
-                      {WEATHER_OPTIONS.map((option) => {
-                        const active = Array.isArray(form.weather) && form.weather.includes(option.value);
-                        return (
-                          <button
-                            key={option.value}
-                            onClick={() => {
-                              setForm((f) => {
-                                const current = Array.isArray(f.weather) ? f.weather : [];
-                                const next = current.includes(option.value)
-                                  ? current.filter((item) => item !== option.value)
-                                  : [...current, option.value];
-                                return { ...f, weather: next };
-                              });
-                            }}
-                            className={`rounded-full border px-3 py-2 text-sm transition-colors ${
-                              active ? "border-[#FFB454] bg-[#FFB454]/10 text-[#FFB454]" : "border-[#2A3140] text-[#8B93A1]"
-                            }`}
-                          >
-                            {option.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </Field>
-                  <Field label="勤務開始">
-                    <TimeSelect value={form.workStart} onChange={(v) => updateField("workStart", v)} options={WORK_TIME_OPTIONS} />
-                  </Field>
+              {!isLegacyMode ? (
+                <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-4">
+                  <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter">朝入力</div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <Field label="体調">
+                      <div className="flex flex-wrap gap-2">
+                        {[
+                          { value: "good", label: "◉ 良", className: "border-[#6EE7A8]/40 text-[#6EE7A8]" },
+                          { value: "normal", label: "○ 並", className: "border-[#FFB454]/40 text-[#FFB454]" },
+                          { value: "bad", label: "▲ 悪", className: "border-[#FF6B57]/40 text-[#FF6B57]" },
+                        ].map((option) => {
+                          const active = form.condition === option.value;
+                          return (
+                            <button
+                              key={option.value}
+                              onClick={() => updateField("condition", option.value)}
+                              className={`rounded-full border px-3 py-2 text-sm transition-colors ${
+                                active ? `${option.className} bg-[#1F242C]` : "border-[#2A3140] text-[#8B93A1]"
+                              }`}
+                            >
+                              {option.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </Field>
+                    <Field label="天気">
+                      <div className="flex flex-wrap gap-2">
+                        {WEATHER_OPTIONS.map((option) => {
+                          const active = Array.isArray(form.weather) && form.weather.includes(option.value);
+                          return (
+                            <button
+                              key={option.value}
+                              onClick={() => {
+                                setForm((f) => {
+                                  const current = Array.isArray(f.weather) ? f.weather : [];
+                                  const next = current.includes(option.value)
+                                    ? current.filter((item) => item !== option.value)
+                                    : [...current, option.value];
+                                  return { ...f, weather: next };
+                                });
+                              }}
+                              className={`rounded-full border px-3 py-2 text-sm transition-colors ${
+                                active ? "border-[#FFB454] bg-[#FFB454]/10 text-[#FFB454]" : "border-[#2A3140] text-[#8B93A1]"
+                              }`}
+                            >
+                              {option.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </Field>
+                    <Field label="勤務開始">
+                      <TimeSelect value={form.workStart} onChange={(v) => updateField("workStart", v)} options={WORK_TIME_OPTIONS} />
+                    </Field>
+                  </div>
                 </div>
-              </div>
+              ) : null}
 
               <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-4">
                 <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter">営業データ</div>
@@ -794,38 +844,42 @@ export default function WorkLog() {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-4">
-                <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter">営業効率</div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-xl border border-[#232A36] bg-[#171C24] px-3 py-3">
-                    <div className="text-[10px] text-[#7C8496]">走行距離</div>
-                    <div className="font-meter text-sm text-[#EDEFF3] mt-0.5">{formatDistanceValue(form.totalDistance)}</div>
-                  </div>
-                  <div className="rounded-xl border border-[#232A36] bg-[#171C24] px-3 py-3">
-                    <div className="text-[10px] text-[#7C8496]">営業距離</div>
-                    <div className="font-meter text-sm text-[#EDEFF3] mt-0.5">{formatDistanceValue(form.occupiedDistance)}</div>
-                  </div>
-                  <div className="rounded-xl border border-[#232A36] bg-[#171C24] px-3 py-3">
-                    <div className="text-[10px] text-[#7C8496]">乗車率</div>
-                    <div className="font-meter text-sm text-[#EDEFF3] mt-0.5">{occupancyRateDisplay}</div>
-                  </div>
-                  <div className="rounded-xl border border-[#232A36] bg-[#171C24] px-3 py-3">
-                    <div className="text-[10px] text-[#7C8496]">平均単価</div>
-                    <div className="font-meter text-sm text-[#EDEFF3] mt-0.5">{averagePriceDisplay}</div>
+              {!isLegacyMode ? (
+                <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-4">
+                  <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter">営業効率</div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-xl border border-[#232A36] bg-[#171C24] px-3 py-3">
+                      <div className="text-[10px] text-[#7C8496]">走行距離</div>
+                      <div className="font-meter text-sm text-[#EDEFF3] mt-0.5">{formatDistanceValue(form.totalDistance)}</div>
+                    </div>
+                    <div className="rounded-xl border border-[#232A36] bg-[#171C24] px-3 py-3">
+                      <div className="text-[10px] text-[#7C8496]">営業距離</div>
+                      <div className="font-meter text-sm text-[#EDEFF3] mt-0.5">{formatDistanceValue(form.occupiedDistance)}</div>
+                    </div>
+                    <div className="rounded-xl border border-[#232A36] bg-[#171C24] px-3 py-3">
+                      <div className="text-[10px] text-[#7C8496]">乗車率</div>
+                      <div className="font-meter text-sm text-[#EDEFF3] mt-0.5">{occupancyRateDisplay}</div>
+                    </div>
+                    <div className="rounded-xl border border-[#232A36] bg-[#171C24] px-3 py-3">
+                      <div className="text-[10px] text-[#7C8496]">平均単価</div>
+                      <div className="font-meter text-sm text-[#EDEFF3] mt-0.5">{averagePriceDisplay}</div>
+                    </div>
                   </div>
                 </div>
-              </div>
+              ) : null}
 
               <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-4">
                 <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter">終了時</div>
-                <div className="grid grid-cols-2 gap-4">
-                  <Field label="休憩時間">
-                    <TimeSelect value={form.breakTime} onChange={(v) => updateField("breakTime", v)} options={BREAK_TIME_OPTIONS} />
-                  </Field>
-                  <Field label="勤務終了">
-                    <TimeSelect value={form.workEnd} onChange={(v) => updateField("workEnd", v)} options={WORK_TIME_OPTIONS} />
-                  </Field>
-                </div>
+                {!isLegacyMode ? (
+                  <div className="grid grid-cols-2 gap-4">
+                    <Field label="休憩時間">
+                      <TimeSelect value={form.breakTime} onChange={(v) => updateField("breakTime", v)} options={BREAK_TIME_OPTIONS} />
+                    </Field>
+                    <Field label="勤務終了">
+                      <TimeSelect value={form.workEnd} onChange={(v) => updateField("workEnd", v)} options={WORK_TIME_OPTIONS} />
+                    </Field>
+                  </div>
+                ) : null}
 
                 <Field label="勤務時間（自動計算・手入力で上書き可）">
                   <input
