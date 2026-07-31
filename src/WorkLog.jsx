@@ -1027,10 +1027,12 @@ export default function WorkLog() {
               <div className="text-[12px] text-[#7C8496]">日付</div>
               <div className="font-medium text-[#EDEFF3]">{m}/{d} ({wd})</div>
             </div>
-            <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-3">
-              <div className="text-[12px] text-[#7C8496]">勤務状態</div>
-              <div className="font-medium text-[#EDEFF3]">{isHoliday ? "公休日" : "明け休み"}</div>
-            </div>
+            {isHoliday ? (
+              <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-3">
+                <div className="text-[12px] text-[#7C8496]">勤務状態</div>
+                <div className="font-medium text-[#EDEFF3]">公休日</div>
+              </div>
+            ) : null}
             {isHoliday ? (
               <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-3">
                 <div className="flex items-center justify-between gap-3">
