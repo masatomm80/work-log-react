@@ -358,11 +358,34 @@ export default function WorkLog() {
   );
   const selectedDutyTags = Array.isArray(form.dutyTags) ? form.dutyTags : [];
   const dutyStampSummary = selectedDutyTags.length > 0 ? selectedDutyTags.join("　") : "未設定";
+  const saveFormEntry = (formToSave) => {
+    const id = formToSave.id || `${formToSave.date}-${Date.now()}`;
+    const recordFormat = inferRecordFormat(formToSave);
+    const record = {
+      ...formToSave,
+      dayStatus: getEffectiveDayStatus(formToSave.date, formToSave),
+      recordFormat,
+      id,
+    };
+    const next = entries.some((e) => e.id === id)
+      ? entries.map((e) => (e.id === id ? record : e))
+      : [...entries.filter((e) => e.date !== formToSave.date), record];
+    setEntries(next);
+    setForm(record);
+    const ok = persistEntries(next);
+    setSaveState(ok ? "saved" : "error");
+    showToast(ok ? "保存しました" : "保存に失敗しました");
+    setTimeout(() => setSaveState("idle"), 1200);
+    return ok;
+  };
+
   const toggleDutyTag = (tag) => {
     setForm((f) => {
       const current = Array.isArray(f.dutyTags) ? f.dutyTags : [];
       const next = current.includes(tag) ? current.filter((item) => item !== tag) : [...current, tag];
-      return { ...f, dutyTags: next };
+      const nextForm = { ...f, dutyTags: next };
+      saveFormEntry(nextForm);
+      return nextForm;
     });
   };
   const periodTotals = useMemo(
@@ -689,50 +712,48 @@ export default function WorkLog() {
             ) : null}
           </div>
         </div>
-          <div className="mx-5 mt-3 rounded-2xl border border-[#232A36] bg-[#171C24] overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setDutyStampOpen((open) => !open)}
-              className="w-full flex items-center justify-between gap-2 px-4 py-4 text-left"
-            >
-              <div>
-                <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter">DUTY STAMP</div>
-                <div className="text-[12px] text-[#8B93A1] mt-1">今日の勤務予定・当番</div>
-              </div>
-              <div className="text-[13px] text-[#7C8496]">{dutyStampOpen ? "−" : "+"}</div>
-            </button>
-            {dutyStampOpen ? (
-              <div className="border-t border-[#232A36] px-4 py-4 space-y-3 bg-[#171C24]">
-                <div className="grid grid-cols-2 gap-2">
-                  {DUTY_TAGS.map((tag) => {
-                    const selected = selectedDutyTags.includes(tag);
-                    return (
-                      <button
-                        key={tag}
-                        type="button"
-                        onClick={() => toggleDutyTag(tag)}
-                        className={`rounded-full border px-3 py-2 text-sm transition-colors ${
-                          selected
-                            ? "border-[#FFB454] bg-[#FFB454] text-[#12151A]"
-                            : "border-[#2A3140] text-[#8B93A1] hover:border-[#FFB454]"
-                        }`}
-                      >
-                        {tag}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : (
-              <div className="border-t border-[#232A36] px-4 py-3 text-sm text-[#EDEFF3]">
-                {dutyStampSummary}
-              </div>
-            )}
-          </div>
-
         {isWorkday ? (
           <>
-            {/* Meter panel */}
+            <div className="mx-5 mt-3 rounded-2xl border border-[#232A36] bg-[#171C24] overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setDutyStampOpen((open) => !open)}
+                className="w-full flex items-center justify-between gap-2 px-4 py-4 text-left"
+              >
+                <div>
+                  <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter">DUTY STAMP</div>
+                  <div className="text-[12px] text-[#8B93A1] mt-1">今日の勤務予定・当番</div>
+                </div>
+                <div className="text-[13px] text-[#7C8496]">{dutyStampOpen ? "−" : "+"}</div>
+              </button>
+              {dutyStampOpen ? (
+                <div className="border-t border-[#232A36] px-4 py-4 space-y-3 bg-[#171C24]">
+                  <div className="grid grid-cols-2 gap-2">
+                    {DUTY_TAGS.map((tag) => {
+                      const selected = selectedDutyTags.includes(tag);
+                      return (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => toggleDutyTag(tag)}
+                          className={`rounded-full border px-3 py-2 text-sm transition-colors ${
+                            selected
+                              ? "border-[#FFB454] bg-[#FFB454] text-[#12151A]"
+                              : "border-[#2A3140] text-[#8B93A1] hover:border-[#FFB454]"
+                          }`}
+                        >
+                          {tag}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="border-t border-[#232A36] px-4 py-3 text-sm text-[#EDEFF3]">
+                  {dutyStampSummary}
+                </div>
+              )}
+            </div>
             <div className="mx-5 mt-5 rounded-2xl bg-[#181D25] border border-[#232A36] overflow-hidden">
               <div className="border-l-4 border-[#FFB454] px-5 py-5">
                 <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter">売上 SALES</div>
