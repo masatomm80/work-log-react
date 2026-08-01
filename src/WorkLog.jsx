@@ -90,6 +90,12 @@ function getStatusLabel(status) {
   if (status === DAY_STATUS.DAYOFF) return "明け休み";
   return "勤務日";
 }
+function isWorkedEntry(entry) {
+  if (!entry || !entry.date) return false;
+  const sales = Number(entry.sales || 0);
+  const isPastOrToday = entry.date <= todayISO();
+  return sales > 0 && isPastOrToday;
+}
 function getRecordFormatFromDate(date) {
   if (!date) return "current";
   return date >= "2024-12-21" && date <= "2026-07-30" ? "legacy" : "current";
@@ -396,7 +402,9 @@ export default function WorkLog() {
           acc.tip += Number(e.tip) || 0;
           acc.count += Number(e.count) || 0;
           acc.hours += Number(e.workHours) || 0;
-          acc.days += 1;
+          if (isWorkedEntry(e)) {
+            acc.days += 1;
+          }
           return acc;
         },
         { sales: 0, tip: 0, count: 0, hours: 0, days: 0 }
