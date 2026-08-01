@@ -317,6 +317,77 @@ function getMonthlyTarget(iso) {
   if ((month === 2 && day >= 21) || (month === 3 && day <= 20)) return 750000;
   return 800000;
 }
+function calculateWorkSchedule(periodRange, entries) {
+  if (!periodRange || !periodRange.start || !periodRange.end) {
+    return {
+      calendarWorkDays: 0,
+      blackHolidayDays: 0,
+      redHolidayDays: 0,
+      plannedWorkDays: 0,
+      completedWorkDays: 0,
+      remainingWorkDays: 0,
+    };
+  }
+  let cursor = periodRange.start;
+  let calendarWorkDays = 0;
+  let blackHolidayDays = 0;
+  let redHolidayDays = 0;
+  const byDate = {};
+  while (cursor <= periodRange.end) {
+    const isWork = isWorkDay(cursor);
+    if (isWork) calendarWorkDays += 1;
+    const h = getHolidayInfo(cursor, entries);
+    if (h && h.type === "black") {
+      // count applied black holidays (skip moved-from scheduled ones)
+      if (!(h.isScheduled && h.isMovedFrom)) blackHolidayDays += 1;
+    } else if (h && h.type === "red") {
+      if (!(h.isScheduled && h.isMovedFrom)) redHolidayDays += 1;
+    }
+    byDate[cursor] = h || null;
+    cursor = addDays(cursor, 1);
+  }
+
+  // Calculate plannedWorkDays: calendarWorkDays - black - red(休む予定のみ)
+  let redToExclude = 0;
+  // For each red holiday in period, check if dutyTags include "赤字（出勤）"
+  cursor = periodRange.start;
+  while (cursor <= periodRange.end) {
+    const h = byDate[cursor];
+    if (h && h.type === "red") {
+      // skip moved-from
+      if (h.isScheduled && h.isMovedFrom) {
+        // do nothing
+      } else {
+        const entry = entries.find((e) => e.date === cursor) || {};
+        const dutyTags = Array.isArray(entry.dutyTags) ? entry.dutyTags : [];
+        const hasWorkTag = dutyTags.includes("赤字（出勤）");
+        if (!hasWorkTag) redToExclude += 1;
+      }
+    }
+    cursor = addDays(cursor, 1);
+  }
+
+  const plannedWorkDays = Math.max(0, calendarWorkDays - blackHolidayDays - redToExclude);
+
+  // completedWorkDays: count entries in period that satisfy isWorkedEntry
+  const completedWorkDays = entries.reduce((acc, e) => {
+    if (!e || !e.date) return acc;
+    if (e.date < periodRange.start || e.date > periodRange.end) return acc;
+    if (isWorkedEntry(e)) return acc + 1;
+    return acc;
+  }, 0);
+
+  const remainingWorkDays = Math.max(0, plannedWorkDays - completedWorkDays);
+
+  return {
+    calendarWorkDays,
+    blackHolidayDays,
+    redHolidayDays,
+    plannedWorkDays,
+    completedWorkDays,
+    remainingWorkDays,
+  };
+}
 function formatPeriodLabel(startIso, endIso) {
   const start = parseISO(startIso);
   const end = parseISO(endIso);
@@ -469,6 +540,7 @@ export default function WorkLog() {
     }
     return result.sort((a, b) => (a.date < b.date ? 1 : -1));
   }, [entries, monthlyLogRange]);
+  const workSchedule = useMemo(() => calculateWorkSchedule(monthlyLogRange, entries), [monthlyLogRange, entries]);
 
   const periodBounds = useMemo(() => getPeriodBounds(periodAnchor), [periodAnchor]);
   const periodEntries = useMemo(
@@ -1466,6 +1538,43 @@ export default function WorkLog() {
                 合計勤務時間 {(Math.round(periodTotals.hours * 10) / 10).toFixed(1)}h
               </div>
             )}
+          </div>
+        </div>
+
+        {/* WORK SCHEDULE */}
+        <div className="mx-5 mt-8">
+          <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter mb-2">WORK SCHEDULE</div>
+          <div className="text-[12px] text-[#7C8496] mb-3">今月度の勤務予定・実績</div>
+          <div className="rounded-2xl bg-[#181D25] border border-[#232A36] px-4 py-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-[13px] text-[#7C8496]">残り勤務</div>
+                <div className="font-meter text-2xl font-bold text-[#EDEFF3] mt-1">{workSchedule.remainingWorkDays}日</div>
+              </div>
+              <div className="grid grid-cols-1 gap-2 text-right">
+                <div className="text-[11px] text-[#7C8496]">暦上勤務</div>
+                <div className="font-meter text-sm text-[#EDEFF3]">{workSchedule.calendarWorkDays}日</div>
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+              <div className="rounded-xl bg-[#171C24] px-3 py-2">
+                <div className="text-[10px] text-[#7C8496]">予定勤務</div>
+                <div className="font-meter text-sm text-[#EDEFF3] mt-1">{workSchedule.plannedWorkDays}日</div>
+              </div>
+              <div className="rounded-xl bg-[#171C24] px-3 py-2">
+                <div className="text-[10px] text-[#7C8496]">勤務済み</div>
+                <div className="font-meter text-sm text-[#EDEFF3] mt-1">{workSchedule.completedWorkDays}日</div>
+              </div>
+              <div className="rounded-xl bg-[#171C24] px-3 py-2">
+                <div className="text-[10px] text-[#7C8496]">黒字公休</div>
+                <div className="font-meter text-sm text-[#EDEFF3] mt-1 text-[#9CA3AF]">{workSchedule.blackHolidayDays}日</div>
+              </div>
+              <div className="rounded-xl bg-[#171C24] px-3 py-2">
+                <div className="text-[10px] text-[#7C8496]">赤字公休</div>
+                <div className="font-meter text-sm text-[#EDEFF3] mt-1 text-[#FF6B57]">{workSchedule.redHolidayDays}日</div>
+              </div>
+            </div>
           </div>
         </div>
 
