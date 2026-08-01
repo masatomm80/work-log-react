@@ -353,7 +353,7 @@ export default function WorkLog() {
   }, [selectedDate, entries]);
 
   const sortedEntries = useMemo(
-    () => [...entries].sort((a, b) => (a.date < b.date ? 1 : -1)),
+    () => [...entries].filter(isWorkedEntry).sort((a, b) => (a.date < b.date ? 1 : -1)),
     [entries]
   );
 
