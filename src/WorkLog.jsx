@@ -1255,17 +1255,17 @@ export default function WorkLog() {
                         {dutyTags.length > 0 ? (
                           <div className="flex flex-wrap gap-2">
                             {dutyTags.map((tag) => (
-                              <span key={tag} className="rounded-full border border-[#2A3140] px-2 py-1 text-[12px] text-[#EDEFF3]">
+                              <span key={tag} className="rounded-full border border-[#2A3140] bg-[#171C24] px-2 py-1 text-[12px] text-[#EDEFF3]">
                                 {tag}
                               </span>
                             ))}
                           </div>
                         ) : null}
                         {type === "worked" ? (
-                          <div className="grid grid-cols-2 gap-3 text-sm text-[#EDEFF3]">
+                          <div className="grid grid-cols-2 gap-3 text-[#EDEFF3]">
                             <div className="rounded-2xl bg-[#171C24] px-3 py-2">
                               <div className="text-[10px] text-[#7C8496]">売上</div>
-                              <div className="mt-1 font-medium">¥{yen(totalSales + totalSalesExtra)}</div>
+                              <div className="mt-1 text-lg font-semibold leading-none">¥{yen(totalSales + totalSalesExtra)}</div>
                             </div>
                             {entry.workHours ? (
                               <div className="rounded-2xl bg-[#171C24] px-3 py-2">
