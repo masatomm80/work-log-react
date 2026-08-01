@@ -569,6 +569,7 @@ export default function WorkLog() {
   const isMovedFrom = Boolean(holidayInfo?.isMovedFrom);
   const isScheduledHoliday = Boolean(holidayInfo?.isScheduled);
   const allowHolidayTypeChange = Boolean(isMovedFrom || form.dayStatus === DAY_STATUS.HOLIDAY);
+  const holidayToggleDisabled = Boolean(holidayInfo?.isScheduled || holidayInfo?.isMovedDestination);
 
   const moveHoliday = () => {
     if (!isScheduledHoliday || isMovedFrom) {
@@ -817,12 +818,6 @@ export default function WorkLog() {
   const isDayOff = effectiveStatus === DAY_STATUS.DAYOFF;
   const isTodaySelected = selectedDate === todayISO();
   const statusLabel = getStatusLabel(effectiveStatus);
-  const selectedHolidayType = holidayInfo?.type || form.holidayType;
-  const isActualHolidayEntry = Boolean(holidayInfo?.isActual);
-  const isMovedDestination = Boolean(holidayInfo?.isMovedDestination);
-  const isMovedFrom = Boolean(holidayInfo?.isMovedFrom);
-  const isScheduledHoliday = Boolean(holidayInfo?.isScheduled);
-  const holidayToggleDisabled = Boolean(holidayInfo?.isScheduled || holidayInfo?.isMovedDestination);
   const currentSalesTotal = (Number(form.sales) || 0) + (Number(form.salesExtra) || 0);
   const totalSales = currentSalesTotal;
   const weekdayTarget = getSalesTargetForWeekday(wd);
