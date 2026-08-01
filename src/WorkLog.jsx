@@ -81,6 +81,8 @@ function isWorkDay(iso) {
 }
 function getEffectiveDayStatus(iso, record, holidayInfo = null) {
   if (holidayInfo?.isActual) return DAY_STATUS.HOLIDAY;
+  if (holidayInfo?.isOverride) return record?.dayStatus || (isWorkDay(iso) ? DAY_STATUS.WORKDAY : DAY_STATUS.DAYOFF);
+  if (holidayInfo?.isScheduled) return DAY_STATUS.HOLIDAY;
   if (record?.dayStatus === DAY_STATUS.HOLIDAY) return DAY_STATUS.HOLIDAY;
   return isWorkDay(iso) ? DAY_STATUS.WORKDAY : DAY_STATUS.DAYOFF;
 }
@@ -92,56 +94,40 @@ function getStatusLabel(status) {
 function getPeriodRange(iso) {
   return getPeriodBounds(iso);
 }
-function getScheduledHoliday(iso) {
+function getScheduledHolidayType(iso) {
   const base = "2026-07-21";
   const diff = diffDays(iso, base);
   if (diff % 14 !== 0) return null;
   const index = Math.floor(diff / 14);
-  const type = index % 2 === 0 ? "black" : "red";
-  return { date: iso, type, index };
+  return index % 2 === 0 ? "black" : "red";
 }
-function findHolidayTransferByOriginal(entries, originalDate) {
+function findManualEntry(entries, date) {
   if (!Array.isArray(entries)) return null;
-  return entries.find(
-    (entry) => entry.holidayTransfer && entry.holidayTransfer.originalDate === originalDate && !entry.holidayTransfer.cancelledAt
-  )?.holidayTransfer || null;
-}
-function findHolidayTransferByMoved(entries, movedDate) {
-  if (!Array.isArray(entries)) return null;
-  return entries.find(
-    (entry) => entry.holidayTransfer && entry.holidayTransfer.movedDate === movedDate && !entry.holidayTransfer.cancelledAt
-  )?.holidayTransfer || null;
+  return entries.find((entry) => entry.date === date) || null;
 }
 function getHolidayInfo(date, entries) {
-  const movedTransfer = findHolidayTransferByMoved(entries, date);
-  if (movedTransfer) {
+  const manual = findManualEntry(entries, date);
+  if (manual) {
     return {
-      isActual: true,
-      isMovedDestination: true,
-      type: movedTransfer.holidayType,
-      originalDate: movedTransfer.originalDate,
-      movedDate: movedTransfer.movedDate,
-      transfer: movedTransfer,
+      type: manual.holidayType || null,
+      isActual: manual.dayStatus === DAY_STATUS.HOLIDAY,
+      isManual: true,
+      isOverride: !!manual.id,
+      date,
+      holidayOrigin: manual.holidayOrigin || manual.date,
+      isMovedDestination: manual.holidayOrigin && manual.holidayOrigin !== manual.date,
+      originalDate:
+        manual.holidayOrigin && manual.holidayOrigin !== manual.date ? manual.holidayOrigin : undefined,
     };
   }
-  const scheduled = getScheduledHoliday(date);
-  if (!scheduled) return null;
-  const originalTransfer = findHolidayTransferByOriginal(entries, date);
-  if (originalTransfer) {
-    return {
-      isActual: false,
-      isMovedFrom: true,
-      type: scheduled.type,
-      originalDate: date,
-      movedDate: originalTransfer.movedDate,
-      transfer: originalTransfer,
-    };
-  }
+  const scheduledType = getScheduledHolidayType(date);
+  if (!scheduledType) return null;
   return {
-    isActual: true,
+    type: scheduledType,
+    isActual: false,
     isScheduled: true,
-    type: scheduled.type,
-    originalDate: date,
+    date,
+    holidayOrigin: null,
   };
 }
 function getMonthlyLogEntryType(entry, holidayInfo) {
@@ -403,19 +389,20 @@ const emptyForm = (date) => ({
   dutyTags: [],
   recordFormat: getRecordFormatFromDate(date),
   dayStatus: getEffectiveDayStatus(date, null),
+  holidayType: null,
+  holidayOrigin: null,
 });
 
 function normalizeForm(date, existing, holidayInfo = null) {
   const entry = ensureRecordFormat(existing || {});
+  const holidayType = entry.dayStatus === DAY_STATUS.HOLIDAY ? entry.holidayType || holidayInfo?.type : entry.holidayType || null;
   return {
     ...emptyForm(date),
     ...entry,
     weather: Array.isArray(entry?.weather) ? entry.weather : [],
     dayStatus: getEffectiveDayStatus(date, entry, holidayInfo),
-    holidayType:
-      holidayInfo?.isActual && !holidayInfo?.isMovedFrom
-        ? holidayInfo.type
-        : entry.holidayType || null,
+    holidayType,
+    holidayOrigin: entry.holidayOrigin || null,
   };
 }
 
@@ -495,9 +482,13 @@ export default function WorkLog() {
     const recordFormat = inferRecordFormat(formToSave);
     const record = {
       ...formToSave,
-      dayStatus: getEffectiveDayStatus(formToSave.date, formToSave),
+      dayStatus: formToSave.dayStatus || getEffectiveDayStatus(formToSave.date, formToSave, getHolidayInfo(formToSave.date, entries)),
       recordFormat,
       id,
+      holidayOrigin:
+        formToSave.dayStatus === DAY_STATUS.HOLIDAY && formToSave.holidayType
+          ? formToSave.holidayOrigin || formToSave.date
+          : undefined,
     };
     const next = entries.some((e) => e.id === id)
       ? entries.map((e) => (e.id === id ? record : e))
@@ -573,7 +564,6 @@ export default function WorkLog() {
     });
   };
 
-  const selectedHolidayType = holidayInfo?.type || form.holidayType;
   const isActualHolidayEntry = Boolean(holidayInfo?.isActual);
   const isMovedDestination = Boolean(holidayInfo?.isMovedDestination);
   const isMovedFrom = Boolean(holidayInfo?.isMovedFrom);
@@ -628,6 +618,7 @@ export default function WorkLog() {
           ...ensureRecordFormat(existingTarget),
           dayStatus: DAY_STATUS.HOLIDAY,
           holidayType: holidayInfo.type,
+          holidayOrigin: originalDate,
           holidayTransfer: transfer,
         }
       : {
@@ -635,6 +626,7 @@ export default function WorkLog() {
           id: `${movedDate}-${Date.now()}-dest`,
           dayStatus: DAY_STATUS.HOLIDAY,
           holidayType: holidayInfo.type,
+          holidayOrigin: originalDate,
           holidayTransfer: transfer,
         };
     const merged = [...next, updatedOriginal, targetEntry].map(ensureRecordFormat);
@@ -712,9 +704,13 @@ export default function WorkLog() {
     const recordFormat = inferRecordFormat(form);
     const record = {
       ...form,
-      dayStatus: getEffectiveDayStatus(form.date, form),
+      dayStatus: form.dayStatus || getEffectiveDayStatus(form.date, form, getHolidayInfo(form.date, entries)),
       recordFormat,
       id,
+      holidayOrigin:
+        form.dayStatus === DAY_STATUS.HOLIDAY && form.holidayType
+          ? form.holidayOrigin || form.date
+          : undefined,
     };
     const next = entries.some((e) => e.id === id)
       ? entries.map((e) => (e.id === id ? record : e))
