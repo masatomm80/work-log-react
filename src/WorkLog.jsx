@@ -670,13 +670,20 @@ export default function WorkLog() {
       : "";
   const companyRadioCountDisplay = Math.max((Number(form.count) || 0) - (Number(form.handRaisedCount) || 0) - (Number(form.appRideCount) || 0), 0);
 
+  const setDateStatus = (status, holidayType = null) => {
+    setForm((f) => ({ ...f, dayStatus: status, holidayType: status === DAY_STATUS.HOLIDAY ? holidayType : null }));
+  };
+
   const handleToggleHoliday = () => {
-    if (!isWorkday) return;
-    if (!isHoliday && hasFormData(form)) {
+    if (isHoliday) {
+      setDateStatus(DAY_STATUS.WORKDAY, null);
+      return;
+    }
+    if (hasFormData(form)) {
       const proceed = window.confirm("入力済みの内容は保持したまま、公休日に切り替えますか？");
       if (!proceed) return;
     }
-    setForm((f) => ({ ...f, dayStatus: isHoliday ? DAY_STATUS.WORKDAY : DAY_STATUS.HOLIDAY }));
+    setDateStatus(DAY_STATUS.HOLIDAY, null);
   };
 
   return (
@@ -740,25 +747,41 @@ export default function WorkLog() {
 
       <div className="max-w-[560px] mx-auto">
         <div className="mx-5 mt-4 rounded-2xl border border-[#232A36] bg-[#171C24] px-4 py-3">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="text-[10px] tracking-[0.2em] text-[#7C8496] font-meter">DATE STATUS</div>
-              <div className="font-medium text-[#EDEFF3] mt-1">{statusLabel}</div>
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[10px] tracking-[0.2em] text-[#7C8496] font-meter">DATE STATUS</div>
+                <div className="font-medium text-[#EDEFF3] mt-1">{statusLabel}</div>
+              </div>
             </div>
-            {isWorkday ? (
-              <button
-                onClick={handleToggleHoliday}
-                className={`flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition-colors ${
-                  isHoliday
-                    ? "border-[#FFB454] bg-[#FFB454]/10 text-[#FFB454]"
-                    : "border-[#2A3140] text-[#8B93A1]"
-                }`}
-              >
-                <span className={`flex h-4 w-4 items-center justify-center rounded border ${isHoliday ? "border-[#FFB454] bg-[#FFB454] text-[#12151A]" : "border-[#8B93A1]"}`}>
-                  {isHoliday ? "✓" : ""}
-                </span>
-                公休日
-              </button>
+            {(isWorkday || isHoliday) ? (
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { label: "勤務日", status: DAY_STATUS.WORKDAY, holidayType: null },
+                  { label: "黒字公休日", status: DAY_STATUS.HOLIDAY, holidayType: "black" },
+                  { label: "赤字公休日", status: DAY_STATUS.HOLIDAY, holidayType: "red" },
+                  { label: "有給休暇", status: DAY_STATUS.HOLIDAY, holidayType: "paid" },
+                ].map((option) => {
+                  const selected =
+                    option.status === DAY_STATUS.WORKDAY
+                      ? effectiveStatus === DAY_STATUS.WORKDAY
+                      : effectiveStatus === DAY_STATUS.HOLIDAY && form.holidayType === option.holidayType;
+                  return (
+                    <button
+                      key={`${option.status}-${option.holidayType || "default"}`}
+                      type="button"
+                      onClick={() => setDateStatus(option.status, option.holidayType)}
+                      className={`rounded-full border px-3 py-2 text-sm transition-colors text-left ${
+                        selected
+                          ? "border-[#FFB454] bg-[#FFB454]/10 text-[#FFB454]"
+                          : "border-[#2A3140] text-[#8B93A1] hover:border-[#FFB454]"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
             ) : null}
           </div>
         </div>
