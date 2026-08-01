@@ -131,6 +131,13 @@ function getHolidayLabel(entry) {
       return "公休日";
   }
 }
+function getNoteSummary(notes, maxLength = 40) {
+  if (!notes) return "";
+  const normalized = String(notes).replace(/\s+/g, " ").trim();
+  if (!normalized) return "";
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, maxLength).trimEnd()}…`;
+}
 function getRecordFormatFromDate(date) {
   if (!date) return "current";
   return date >= "2024-12-21" && date <= "2026-07-30" ? "legacy" : "current";
@@ -1252,6 +1259,8 @@ export default function WorkLog() {
                 const dutyTags = Array.isArray(entry.dutyTags) ? entry.dutyTags : [];
                 const totalSales = Number(entry.sales) || 0;
                 const totalSalesExtra = Number(entry.salesExtra) || 0;
+                const noteSummary = getNoteSummary(entry.notes, 40);
+                const showTopSummary = noteSummary && type !== "worked";
                 return (
                   <div
                     key={entry.id}
@@ -1260,7 +1269,7 @@ export default function WorkLog() {
                       isSelected ? "border-[#FFB454] bg-[#1D2029]" : "border-[#232A36] bg-[#161A21] active:border-[#3A4152]"
                     }`}
                   >
-                    <div className="flex items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-baseline gap-2 font-meter flex-shrink-0">
                         <span className="font-bold">
                           {label.m}/{label.d}
@@ -1269,11 +1278,14 @@ export default function WorkLog() {
                           {label.wd}
                         </span>
                       </div>
-                      <span className={`rounded-full px-2 py-1 text-[11px] font-medium ${badgeClasses}`}>{badgeLabel}</span>
+                      <div className="flex flex-wrap items-center gap-2 min-w-0 justify-end">
+                        {showTopSummary ? (
+                          <span className="truncate text-[13px] text-[#EDEFF3] max-w-[280px]">{noteSummary}</span>
+                        ) : null}
+                        <span className={`rounded-full px-2 py-1 text-[11px] font-medium ${badgeClasses}`}>{badgeLabel}</span>
+                      </div>
                     </div>
-                    {type === "holiday" ? (
-                      <div className="mt-3 text-[#EDEFF3] text-sm">{getHolidayLabel(entry)}</div>
-                    ) : (
+                    {type === "holiday" ? null : (
                       <div className="mt-3 space-y-2 text-[#EDEFF3] text-sm">
                         {dutyTags.length > 0 ? (
                           <div className="flex flex-wrap gap-2">
@@ -1285,20 +1297,26 @@ export default function WorkLog() {
                           </div>
                         ) : null}
                         {type === "worked" ? (
-                          <div className="grid grid-cols-2 gap-3 text-[#EDEFF3]">
-                            <div className="rounded-2xl bg-[#171C24] px-3 py-2">
+                          <div className="flex flex-wrap gap-3 text-[#EDEFF3]">
+                            <div className="rounded-2xl bg-[#171C24] px-3 py-2 min-w-[120px]">
                               <div className="text-[10px] text-[#7C8496]">売上</div>
                               <div className="mt-1 text-lg font-semibold leading-none">¥{yen(totalSales + totalSalesExtra)}</div>
                             </div>
+                            {noteSummary ? (
+                              <div className="rounded-2xl bg-[#171C24] px-3 py-2 min-w-[140px] flex-1">
+                                <div className="text-[10px] text-[#7C8496]">コメント</div>
+                                <div className="mt-1 text-sm text-[#EDEFF3] truncate">{noteSummary}</div>
+                              </div>
+                            ) : null}
                             {entry.workHours ? (
-                              <div className="rounded-2xl bg-[#171C24] px-3 py-2">
+                              <div className="rounded-2xl bg-[#171C24] px-3 py-2 min-w-[80px]">
                                 <div className="text-[10px] text-[#7C8496]">勤務時間</div>
                                 <div className="mt-1 font-medium">{entry.workHours}h</div>
                               </div>
                             ) : null}
                           </div>
                         ) : (
-                          <div className="rounded-2xl bg-[#171C24] px-3 py-2 text-sm text-[#FFB454]">勤務前</div>
+                          dutyTags.length > 0 ? null : null
                         )}
                       </div>
                     )}
