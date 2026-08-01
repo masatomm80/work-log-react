@@ -90,11 +90,46 @@ function getStatusLabel(status) {
   if (status === DAY_STATUS.DAYOFF) return "明け休み";
   return "勤務日";
 }
+function getPeriodRange(iso) {
+  return getPeriodBounds(iso);
+}
 function isWorkedEntry(entry) {
   if (!entry || !entry.date) return false;
   const sales = Number(entry.sales || 0);
   const isPastOrToday = entry.date <= todayISO();
   return sales > 0 && isPastOrToday;
+}
+function hasMonthlyLogContents(entry) {
+  if (!entry) return false;
+  if (Array.isArray(entry.dutyTags) && entry.dutyTags.length > 0) return true;
+  if (entry.notes) return true;
+  if (entry.holidayType) return true;
+  if (entry.sales || entry.salesExtra || entry.tip || entry.count || entry.handRaisedCount || entry.appRideCount || entry.totalDistance || entry.occupiedDistance || entry.condition || (Array.isArray(entry.weather) && entry.weather.length) || entry.workStart || entry.workEnd || entry.breakTime || entry.workHours) {
+    return true;
+  }
+  return false;
+}
+function getMonthlyLogEntryType(entry) {
+  if (!entry || !entry.date) return "empty";
+  const entryStatus = getEffectiveDayStatus(entry.date, entry);
+  if (entryStatus === DAY_STATUS.DAYOFF) return "dayoff";
+  if (entryStatus === DAY_STATUS.HOLIDAY) return "holiday";
+  if (isWorkedEntry(entry)) return "worked";
+  if (hasMonthlyLogContents(entry)) return "scheduled";
+  return "empty";
+}
+function getHolidayLabel(entry) {
+  if (!entry) return "公休日";
+  switch (entry.holidayType) {
+    case "black":
+      return "黒字公休日";
+    case "red":
+      return "赤字公休日";
+    case "paid":
+      return "有給休暇";
+    default:
+      return "公休日";
+  }
 }
 function getRecordFormatFromDate(date) {
   if (!date) return "current";
@@ -352,9 +387,16 @@ export default function WorkLog() {
     setForm(existing ? normalizeForm(selectedDate, existing) : emptyForm(selectedDate));
   }, [selectedDate, entries]);
 
-  const sortedEntries = useMemo(
-    () => [...entries].filter(isWorkedEntry).sort((a, b) => (a.date < b.date ? 1 : -1)),
-    [entries]
+  const monthlyLogRange = useMemo(() => getPeriodRange(selectedDate), [selectedDate]);
+  const monthlyLogEntries = useMemo(
+    () =>
+      [...entries]
+        .filter((entry) => {
+          const type = getMonthlyLogEntryType(entry);
+          return type !== "dayoff" && type !== "empty" && entry.date >= monthlyLogRange.start && entry.date <= monthlyLogRange.end;
+        })
+        .sort((a, b) => (a.date < b.date ? 1 : -1)),
+    [entries, monthlyLogRange]
   );
 
   const periodBounds = useMemo(() => getPeriodBounds(periodAnchor), [periodAnchor]);
@@ -1159,25 +1201,34 @@ export default function WorkLog() {
           </div>
         </div>
 
-        {/* History */}
+        {/* MONTHLY LOG */}
         <div className="mx-5 mt-8">
-          <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter mb-2">HISTORY</div>
-          {sortedEntries.length === 0 ? (
+          <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter mb-2">MONTHLY LOG</div>
+          {monthlyLogEntries.length === 0 ? (
             <div className="text-[13px] text-[#7C8496] border border-dashed border-[#2A3140] rounded-xl px-4 py-6 text-center">
-              まだ記録がありません。今日の分を入力しましょう。
+              月度の履歴がありません。
             </div>
           ) : (
             <div className="space-y-2">
-              {sortedEntries.map((entry) => {
+              {monthlyLogEntries.map((entry) => {
                 const label = fmtDateLabel(entry.date);
-                const entryStatus = getEffectiveDayStatus(entry.date, entry);
+                const type = getMonthlyLogEntryType(entry);
                 const isSelected = entry.date === selectedDate;
-                const statusBadgeClass =
-                  entryStatus === DAY_STATUS.HOLIDAY
-                    ? "bg-[#FFB454]/10 text-[#FFB454]"
-                    : entryStatus === DAY_STATUS.DAYOFF
-                      ? "bg-[#2A3140] text-[#8B93A1]"
-                      : "bg-[#6EE7A8]/10 text-[#6EE7A8]";
+                const badgeClasses =
+                  type === "holiday"
+                    ? "bg-[#FF6B57]/10 text-[#FF6B57]"
+                    : type === "worked"
+                      ? "bg-[#6EE7A8]/10 text-[#6EE7A8]"
+                      : "bg-[#FFB454]/10 text-[#FFB454]";
+                const badgeLabel =
+                  type === "holiday"
+                    ? getHolidayLabel(entry)
+                    : type === "worked"
+                      ? "勤務済み"
+                      : "勤務前";
+                const dutyTags = Array.isArray(entry.dutyTags) ? entry.dutyTags : [];
+                const totalSales = Number(entry.sales) || 0;
+                const totalSalesExtra = Number(entry.salesExtra) || 0;
                 return (
                   <div
                     key={entry.id}
@@ -1195,25 +1246,39 @@ export default function WorkLog() {
                           {label.wd}
                         </span>
                       </div>
-                      <div className="flex items-center gap-3 font-meter text-[13px] text-[#EDEFF3] min-w-0">
-                        <span className={`rounded-full px-2 py-1 text-[11px] ${statusBadgeClass}`}>{getStatusLabel(entryStatus)}</span>
-                        <span className="truncate">
-                          ¥{yen((Number(entry.sales) || 0) + (Number(entry.salesExtra) || 0))}
-                        </span>
-                        {entry.workHours && <span className="text-[#7C8496] flex-shrink-0">{entry.workHours}h</span>}
-                        <button
-                          onClick={(ev) => {
-                            ev.stopPropagation();
-                            setConfirmDeleteId(entry.id);
-                          }}
-                          className="text-[#7C8496] active:text-[#FF6B57] p-1 flex-shrink-0"
-                          aria-label="削除"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
+                      <span className={`rounded-full px-2 py-1 text-[11px] font-medium ${badgeClasses}`}>{badgeLabel}</span>
                     </div>
-                    {entry.notes && <div className="text-[12px] text-[#8B93A1] mt-1 truncate">{entry.notes}</div>}
+                    {type === "holiday" ? (
+                      <div className="mt-3 text-[#EDEFF3] text-sm">{getHolidayLabel(entry)}</div>
+                    ) : (
+                      <div className="mt-3 space-y-2 text-[#EDEFF3] text-sm">
+                        {dutyTags.length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {dutyTags.map((tag) => (
+                              <span key={tag} className="rounded-full border border-[#2A3140] px-2 py-1 text-[12px] text-[#EDEFF3]">
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                        {type === "worked" ? (
+                          <div className="grid grid-cols-2 gap-3 text-sm text-[#EDEFF3]">
+                            <div className="rounded-2xl bg-[#171C24] px-3 py-2">
+                              <div className="text-[10px] text-[#7C8496]">売上</div>
+                              <div className="mt-1 font-medium">¥{yen(totalSales + totalSalesExtra)}</div>
+                            </div>
+                            {entry.workHours ? (
+                              <div className="rounded-2xl bg-[#171C24] px-3 py-2">
+                                <div className="text-[10px] text-[#7C8496]">勤務時間</div>
+                                <div className="mt-1 font-medium">{entry.workHours}h</div>
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <div className="rounded-2xl bg-[#171C24] px-3 py-2 text-sm text-[#FFB454]">勤務前</div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })}
