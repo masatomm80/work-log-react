@@ -79,10 +79,9 @@ function isWorkDay(iso) {
   const diff = diffDays(iso, FIRST_WORKDAY);
   return diff >= 0 && diff % 2 === 0;
 }
-function getEffectiveDayStatus(iso, record) {
-  if (record?.dayStatus === DAY_STATUS.HOLIDAY && isWorkDay(iso)) {
-    return DAY_STATUS.HOLIDAY;
-  }
+function getEffectiveDayStatus(iso, record, holidayInfo = null) {
+  if (holidayInfo?.isActual) return DAY_STATUS.HOLIDAY;
+  if (record?.dayStatus === DAY_STATUS.HOLIDAY) return DAY_STATUS.HOLIDAY;
   return isWorkDay(iso) ? DAY_STATUS.WORKDAY : DAY_STATUS.DAYOFF;
 }
 function getStatusLabel(status) {
@@ -92,6 +91,91 @@ function getStatusLabel(status) {
 }
 function getPeriodRange(iso) {
   return getPeriodBounds(iso);
+}
+function getScheduledHoliday(iso) {
+  const base = "2026-07-21";
+  const diff = diffDays(iso, base);
+  if (diff % 14 !== 0) return null;
+  const index = Math.floor(diff / 14);
+  const type = index % 2 === 0 ? "black" : "red";
+  return { date: iso, type, index };
+}
+function findHolidayTransferByOriginal(entries, originalDate) {
+  if (!Array.isArray(entries)) return null;
+  return entries.find(
+    (entry) => entry.holidayTransfer && entry.holidayTransfer.originalDate === originalDate && !entry.holidayTransfer.cancelledAt
+  )?.holidayTransfer || null;
+}
+function findHolidayTransferByMoved(entries, movedDate) {
+  if (!Array.isArray(entries)) return null;
+  return entries.find(
+    (entry) => entry.holidayTransfer && entry.holidayTransfer.movedDate === movedDate && !entry.holidayTransfer.cancelledAt
+  )?.holidayTransfer || null;
+}
+function getHolidayInfo(date, entries) {
+  const movedTransfer = findHolidayTransferByMoved(entries, date);
+  if (movedTransfer) {
+    return {
+      isActual: true,
+      isMovedDestination: true,
+      type: movedTransfer.holidayType,
+      originalDate: movedTransfer.originalDate,
+      movedDate: movedTransfer.movedDate,
+      transfer: movedTransfer,
+    };
+  }
+  const scheduled = getScheduledHoliday(date);
+  if (!scheduled) return null;
+  const originalTransfer = findHolidayTransferByOriginal(entries, date);
+  if (originalTransfer) {
+    return {
+      isActual: false,
+      isMovedFrom: true,
+      type: scheduled.type,
+      originalDate: date,
+      movedDate: originalTransfer.movedDate,
+      transfer: originalTransfer,
+    };
+  }
+  return {
+    isActual: true,
+    isScheduled: true,
+    type: scheduled.type,
+    originalDate: date,
+  };
+}
+function getMonthlyLogEntryType(entry, holidayInfo) {
+  if (!entry || !entry.date) return "empty";
+  const entryStatus = getEffectiveDayStatus(entry.date, entry, holidayInfo);
+  if (holidayInfo?.isMovedFrom) return "holiday";
+  if (entryStatus === DAY_STATUS.DAYOFF) return "dayoff";
+  if (entryStatus === DAY_STATUS.HOLIDAY) return "holiday";
+  if (isWorkedEntry(entry)) return "worked";
+  if (hasMonthlyLogContents(entry)) return "scheduled";
+  return "empty";
+}
+function getHolidayLabel(entry, holidayInfo) {
+  if (holidayInfo?.isMovedFrom) {
+    if (holidayInfo.type === "black") return "黒字公休日（移動済み）";
+    if (holidayInfo.type === "red") return "赤字公休日（移動済み）";
+    return "公休日（移動済み）";
+  }
+  if (holidayInfo?.isMovedDestination || holidayInfo?.isScheduled) {
+    if (holidayInfo.type === "black") return "黒字公休日";
+    if (holidayInfo.type === "red") return "赤字公休日";
+    return "公休日";
+  }
+  if (!entry) return "公休日";
+  switch (entry.holidayType) {
+    case "black":
+      return "黒字公休日";
+    case "red":
+      return "赤字公休日";
+    case "paid":
+      return "有給休暇";
+    default:
+      return "公休日";
+  }
 }
 function isWorkedEntry(entry) {
   if (!entry || !entry.date) return false;
@@ -108,28 +192,6 @@ function hasMonthlyLogContents(entry) {
     return true;
   }
   return false;
-}
-function getMonthlyLogEntryType(entry) {
-  if (!entry || !entry.date) return "empty";
-  const entryStatus = getEffectiveDayStatus(entry.date, entry);
-  if (entryStatus === DAY_STATUS.DAYOFF) return "dayoff";
-  if (entryStatus === DAY_STATUS.HOLIDAY) return "holiday";
-  if (isWorkedEntry(entry)) return "worked";
-  if (hasMonthlyLogContents(entry)) return "scheduled";
-  return "empty";
-}
-function getHolidayLabel(entry) {
-  if (!entry) return "公休日";
-  switch (entry.holidayType) {
-    case "black":
-      return "黒字公休日";
-    case "red":
-      return "赤字公休日";
-    case "paid":
-      return "有給休暇";
-    default:
-      return "公休日";
-  }
 }
 function getNoteSummary(notes, maxLength = 40) {
   if (!notes) return "";
@@ -343,13 +405,17 @@ const emptyForm = (date) => ({
   dayStatus: getEffectiveDayStatus(date, null),
 });
 
-function normalizeForm(date, existing) {
+function normalizeForm(date, existing, holidayInfo = null) {
   const entry = ensureRecordFormat(existing || {});
   return {
     ...emptyForm(date),
     ...entry,
     weather: Array.isArray(entry?.weather) ? entry.weather : [],
-    dayStatus: getEffectiveDayStatus(date, entry),
+    dayStatus: getEffectiveDayStatus(date, entry, holidayInfo),
+    holidayType:
+      holidayInfo?.isActual && !holidayInfo?.isMovedFrom
+        ? holidayInfo.type
+        : entry.holidayType || null,
   };
 }
 
@@ -378,6 +444,7 @@ export default function WorkLog() {
   const [periodAnchor, setPeriodAnchor] = useState(todayISO());
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [toast, setToast] = useState(null);
+  const [holidayMoveTarget, setHolidayMoveTarget] = useState("");
   const [dutyStampOpen, setDutyStampOpen] = useState(false);
   const dateInputRef = useRef(null);
   const restoreInputRef = useRef(null);
@@ -385,26 +452,36 @@ export default function WorkLog() {
 
   const currentEntries = useMemo(() => entries.filter(isCurrentRecord), [entries]);
   const legacyEntries = useMemo(() => entries.filter(isLegacyRecord), [entries]);
+  const holidayInfo = useMemo(() => getHolidayInfo(selectedDate, entries), [selectedDate, entries]);
   const activeRecordFormat = form.recordFormat || getRecordFormatFromDate(selectedDate);
   const isLegacyMode = activeRecordFormat === "legacy";
   const isCurrentMode = activeRecordFormat === "current";
 
   useEffect(() => {
     const existing = entries.find((e) => e.date === selectedDate);
-    setForm(existing ? normalizeForm(selectedDate, existing) : emptyForm(selectedDate));
-  }, [selectedDate, entries]);
+    setForm(existing ? normalizeForm(selectedDate, existing, holidayInfo) : normalizeForm(selectedDate, null, holidayInfo));
+  }, [selectedDate, entries, holidayInfo]);
 
   const monthlyLogRange = useMemo(() => getPeriodRange(selectedDate), [selectedDate]);
-  const monthlyLogEntries = useMemo(
-    () =>
-      [...entries]
-        .filter((entry) => {
-          const type = getMonthlyLogEntryType(entry);
-          return type !== "dayoff" && type !== "empty" && entry.date >= monthlyLogRange.start && entry.date <= monthlyLogRange.end;
-        })
-        .sort((a, b) => (a.date < b.date ? 1 : -1)),
-    [entries, monthlyLogRange]
-  );
+  const monthlyLogEntries = useMemo(() => {
+    const byDate = entries.reduce((acc, entry) => {
+      if (entry?.date) acc[entry.date] = ensureRecordFormat(entry);
+      return acc;
+    }, {});
+    const result = [];
+    let cursor = monthlyLogRange.start;
+    while (cursor <= monthlyLogRange.end) {
+      const holidayInfo = getHolidayInfo(cursor, entries);
+      const entry = byDate[cursor] || { id: `placeholder-${cursor}`, date: cursor };
+      const normalized = ensureRecordFormat(entry);
+      const type = getMonthlyLogEntryType(normalized, holidayInfo);
+      if (type !== "dayoff" && type !== "empty") {
+        result.push({ ...normalized, holidayInfo, monthlyLogType: type });
+      }
+      cursor = addDays(cursor, 1);
+    }
+    return result.sort((a, b) => (a.date < b.date ? 1 : -1));
+  }, [entries, monthlyLogRange]);
 
   const periodBounds = useMemo(() => getPeriodBounds(periodAnchor), [periodAnchor]);
   const periodEntries = useMemo(
@@ -494,6 +571,114 @@ export default function WorkLog() {
       const nextParts = has ? parts.filter((p) => p !== tag) : [...parts, tag];
       return { ...f, notes: nextParts.join("　") };
     });
+  };
+
+  const selectedHolidayType = holidayInfo?.type || form.holidayType;
+  const isActualHolidayEntry = Boolean(holidayInfo?.isActual);
+  const isMovedDestination = Boolean(holidayInfo?.isMovedDestination);
+  const isMovedFrom = Boolean(holidayInfo?.isMovedFrom);
+  const isScheduledHoliday = Boolean(holidayInfo?.isScheduled);
+  const allowHolidayTypeChange = Boolean(isMovedFrom || form.dayStatus === DAY_STATUS.HOLIDAY);
+
+  const moveHoliday = () => {
+    if (!isScheduledHoliday || isMovedFrom) {
+      showToast("この日は移動対象の公休ではありません。");
+      return;
+    }
+    if (!holidayMoveTarget) {
+      showToast("移動先の日付を選択してください。");
+      return;
+    }
+    if (holidayMoveTarget === selectedDate) {
+      showToast("移動先は移動元と同じ日付にできません。");
+      return;
+    }
+    const targetHolidayInfo = getHolidayInfo(holidayMoveTarget, entries);
+    if (targetHolidayInfo?.isActual || targetHolidayInfo?.isScheduled || targetHolidayInfo?.isMovedDestination) {
+      showToast("移動先はすでに公休日になっています。");
+      return;
+    }
+    const originalDate = selectedDate;
+    const movedDate = holidayMoveTarget;
+    const transfer = {
+      originalDate,
+      movedDate,
+      holidayType: holidayInfo.type,
+      movedAt: new Date().toISOString(),
+    };
+    const originalEntry = entries.find((entry) => entry.date === originalDate);
+    const updatedOriginal = originalEntry
+      ? {
+          ...ensureRecordFormat(originalEntry),
+          holidayType: null,
+          holidayTransfer: transfer,
+          dayStatus: getEffectiveDayStatus(originalDate, { ...originalEntry, dayStatus: DAY_STATUS.WORKDAY, holidayType: null }),
+        }
+      : {
+          ...emptyForm(originalDate),
+          id: `${originalDate}-${Date.now()}-orig`,
+          holidayType: null,
+          holidayTransfer: transfer,
+          dayStatus: getEffectiveDayStatus(originalDate, null),
+        };
+    const next = entries.filter((entry) => entry.date !== originalDate && entry.date !== movedDate);
+    const existingTarget = entries.find((entry) => entry.date === movedDate);
+    const targetEntry = existingTarget
+      ? {
+          ...ensureRecordFormat(existingTarget),
+          dayStatus: DAY_STATUS.HOLIDAY,
+          holidayType: holidayInfo.type,
+          holidayTransfer: transfer,
+        }
+      : {
+          ...emptyForm(movedDate),
+          id: `${movedDate}-${Date.now()}-dest`,
+          dayStatus: DAY_STATUS.HOLIDAY,
+          holidayType: holidayInfo.type,
+          holidayTransfer: transfer,
+        };
+    const merged = [...next, updatedOriginal, targetEntry].map(ensureRecordFormat);
+    setEntries(merged);
+    persistEntries(merged);
+    setHolidayMoveTarget("");
+    setSelectedDate(movedDate);
+    showToast("公休日を移動しました。移動先でコメントを保存してください。");
+  };
+
+  const undoHolidayMove = () => {
+    if (!isMovedDestination) {
+      showToast("この日付は移動先の公休ではありません。");
+      return;
+    }
+    const movedDate = selectedDate;
+    const targetEntry = entries.find((entry) => entry.date === movedDate && entry.holidayTransfer);
+    if (!targetEntry) {
+      showToast("解除対象の移動データが見つかりませんでした。");
+      return;
+    }
+    const originalDate = targetEntry.holidayTransfer.originalDate;
+    const next = entries.map((entry) => {
+      if (entry.date === movedDate) {
+        const cleared = { ...ensureRecordFormat(entry) };
+        delete cleared.holidayTransfer;
+        cleared.holidayType = null;
+        cleared.dayStatus = getEffectiveDayStatus(movedDate, cleared);
+        return cleared;
+      }
+      if (entry.date === originalDate) {
+        const cleared = { ...ensureRecordFormat(entry) };
+        delete cleared.holidayTransfer;
+        cleared.holidayType = null;
+        cleared.dayStatus = getEffectiveDayStatus(originalDate, cleared);
+        return cleared;
+      }
+      return entry;
+    });
+    const persisted = next.map(ensureRecordFormat);
+    setEntries(persisted);
+    persistEntries(persisted);
+    setSelectedDate(originalDate);
+    showToast("公休日の移動を解除しました。");
   };
 
   const handleSave = () => {
@@ -630,12 +815,18 @@ export default function WorkLog() {
   };
 
   const { m, d, wd } = fmtDateLabel(selectedDate);
-  const effectiveStatus = getEffectiveDayStatus(selectedDate, form);
+  const effectiveStatus = getEffectiveDayStatus(selectedDate, form, holidayInfo);
   const isWorkday = effectiveStatus === DAY_STATUS.WORKDAY;
   const isHoliday = effectiveStatus === DAY_STATUS.HOLIDAY;
   const isDayOff = effectiveStatus === DAY_STATUS.DAYOFF;
   const isTodaySelected = selectedDate === todayISO();
   const statusLabel = getStatusLabel(effectiveStatus);
+  const selectedHolidayType = holidayInfo?.type || form.holidayType;
+  const isActualHolidayEntry = Boolean(holidayInfo?.isActual);
+  const isMovedDestination = Boolean(holidayInfo?.isMovedDestination);
+  const isMovedFrom = Boolean(holidayInfo?.isMovedFrom);
+  const isScheduledHoliday = Boolean(holidayInfo?.isScheduled);
+  const holidayToggleDisabled = Boolean(holidayInfo?.isScheduled || holidayInfo?.isMovedDestination);
   const currentSalesTotal = (Number(form.sales) || 0) + (Number(form.salesExtra) || 0);
   const totalSales = currentSalesTotal;
   const weekdayTarget = getSalesTargetForWeekday(wd);
@@ -678,10 +869,24 @@ export default function WorkLog() {
   const companyRadioCountDisplay = Math.max((Number(form.count) || 0) - (Number(form.handRaisedCount) || 0) - (Number(form.appRideCount) || 0), 0);
 
   const setDateStatus = (status, holidayType = null) => {
+    if (status === DAY_STATUS.HOLIDAY && (holidayType === "black" || holidayType === "red")) {
+      if (!holidayInfo?.isScheduled && !holidayInfo?.isMovedDestination) {
+        showToast("この日付では黒字公休日・赤字公休日を設定できません。自動算出された公休日を移動してください。\n");
+        return;
+      }
+      if (holidayInfo?.isActual && holidayInfo.type !== holidayType) {
+        showToast("自動算出された公休日の種類は変更できません。");
+        return;
+      }
+    }
     setForm((f) => ({ ...f, dayStatus: status, holidayType: status === DAY_STATUS.HOLIDAY ? holidayType : null }));
   };
 
   const handleToggleHoliday = () => {
+    if (holidayToggleDisabled) {
+      showToast("自動算出された公休日はここでは切り替えできません。移動機能をご利用ください。");
+      return;
+    }
     if (isHoliday) {
       setDateStatus(DAY_STATUS.WORKDAY, null);
       return;
@@ -759,6 +964,12 @@ export default function WorkLog() {
               <div>
                 <div className="text-[10px] tracking-[0.2em] text-[#7C8496] font-meter">DATE STATUS</div>
                 <div className="font-medium text-[#EDEFF3] mt-1">{statusLabel}</div>
+                {isMovedFrom ? (
+                  <div className="text-[12px] text-[#FFB454] mt-1">本来の公休・移動済み</div>
+                ) : null}
+                {isMovedDestination ? (
+                  <div className="text-[12px] text-[#6EE7A8] mt-1">元の公休: {holidayInfo.originalDate}</div>
+                ) : null}
               </div>
             </div>
             {(isWorkday || isHoliday) ? (
@@ -788,6 +999,42 @@ export default function WorkLog() {
                     </button>
                   );
                 })}
+              </div>
+            ) : null}
+            {isScheduledHoliday ? (
+              <div className="mt-4 rounded-2xl border border-[#232A36] bg-[#171C24] px-4 py-4">
+                <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter">公休日移動</div>
+                <div className="mt-2 text-[13px] text-[#EDEFF3]">この日は自動算出された{holidayInfo.type === "black" ? "黒字" : "赤字"}公休です。</div>
+                <div className="mt-3 grid gap-3">
+                  <label className="text-[12px] text-[#7C8496]">移動先の日付</label>
+                  <input
+                    type="date"
+                    min={FIRST_WORKDAY}
+                    value={holidayMoveTarget}
+                    onChange={(e) => setHolidayMoveTarget(e.target.value)}
+                    className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-4 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFB454]"
+                  />
+                  <button
+                    type="button"
+                    onClick={moveHoliday}
+                    className="w-full rounded-xl bg-[#6EE7A8] py-4 text-[#12151A] font-medium active:bg-[#7DF3B6] transition-colors"
+                  >
+                    公休日を移動する
+                  </button>
+                </div>
+              </div>
+            ) : null}
+            {isMovedDestination ? (
+              <div className="mt-4 rounded-2xl border border-[#232A36] bg-[#171C24] px-4 py-4">
+                <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter">移動先の公休日</div>
+                <div className="mt-2 text-[13px] text-[#EDEFF3]">元の公休日: {holidayInfo.originalDate} ({holidayInfo.type === "black" ? "黒字" : "赤字"})</div>
+                <button
+                  type="button"
+                  onClick={undoHolidayMove}
+                  className="mt-3 w-full rounded-xl bg-[#FF6B57] py-4 text-[#12151A] font-medium active:bg-[#FF8A80] transition-colors"
+                >
+                  移動を解除する
+                </button>
               </div>
             ) : null}
           </div>
@@ -1242,11 +1489,11 @@ export default function WorkLog() {
             <div className="space-y-2">
               {monthlyLogEntries.map((entry) => {
                 const label = fmtDateLabel(entry.date);
-                const type = getMonthlyLogEntryType(entry);
+                const type = entry.monthlyLogType;
                 const isSelected = entry.date === selectedDate;
                 const badgeClasses =
                   type === "holiday"
-                    ? entry.holidayType === "red"
+                    ? entry.holidayInfo?.type === "red"
                       ? "bg-[#FF6B57]/10 text-[#FF6B57]"
                       : "bg-[#2F343B] text-[#D1D5DB]"
                     : type === "worked"
@@ -1254,7 +1501,7 @@ export default function WorkLog() {
                       : "bg-[#FFB454]/10 text-[#FFB454]";
                 const badgeLabel =
                   type === "holiday"
-                    ? getHolidayLabel(entry)
+                    ? getHolidayLabel(entry, entry.holidayInfo)
                     : type === "worked"
                       ? "勤務済み"
                       : "勤務前";
