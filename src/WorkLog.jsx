@@ -1246,7 +1246,9 @@ export default function WorkLog() {
                 const isSelected = entry.date === selectedDate;
                 const badgeClasses =
                   type === "holiday"
-                    ? "bg-[#FF6B57]/10 text-[#FF6B57]"
+                    ? entry.holidayType === "red"
+                      ? "bg-[#FF6B57]/10 text-[#FF6B57]"
+                      : "bg-[#2F343B] text-[#D1D5DB]"
                     : type === "worked"
                       ? "bg-[#6EE7A8]/10 text-[#6EE7A8]"
                       : "bg-[#FFB454]/10 text-[#FFB454]";
