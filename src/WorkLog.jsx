@@ -976,7 +976,8 @@ export default function WorkLog() {
       return acc;
     }, 0);
   }, [periodEntries]);
-  const monthlyRemaining = monthlySalesTotal >= monthlyTarget ? 0 : Math.max(monthlyTarget - monthlySalesTotal, 0);
+  // 達成＋− = 売上合計 − 今月ノルマ(超過はプラス、未達はマイナス、0は符号なしで表示する)
+  const monthlyAchievementDiff = monthlySalesTotal - monthlyTarget;
   const occupancyRateDisplay = useMemo(
     () => formatOccupancyRate(form.totalDistance, form.occupiedDistance),
     [form.totalDistance, form.occupiedDistance]
@@ -1300,7 +1301,7 @@ export default function WorkLog() {
                 {[
                   ["チップ", form.tip ? `¥${yen(form.tip)}` : "—"],
                   ["回数", form.count || "—"],
-                  ["勤務時間", form.workHours ? `${form.workHours}h` : "—"],
+                  [isLegacyMode ? "勤務時間" : "実務時間", form.workHours ? `${form.workHours}h` : "—"],
                 ].map(([label, val]) => (
                   <div key={label} className="px-4 py-3 border-r border-[#232A36] last:border-r-0 min-w-0">
                     <div className="text-[10px] text-[#7C8496] tracking-wide">{label}</div>
@@ -1486,7 +1487,7 @@ export default function WorkLog() {
                   </div>
                 ) : null}
 
-                <Field label="勤務時間">
+                <Field label={isLegacyMode ? "勤務時間" : "実務時間"}>
                   <input
                     type="text"
                     inputMode="decimal"
@@ -1641,8 +1642,18 @@ export default function WorkLog() {
                   <div className="font-meter text-sm text-[#EDEFF3] mt-0.5">¥{yen(monthlyTarget)}</div>
                 </div>
                 <div className="rounded-xl bg-[#181D25] px-3 py-2">
-                  <div className="text-[10px] text-[#7C8496]">達成残額</div>
-                  <div className="font-meter text-sm text-[#EDEFF3] mt-0.5">¥{yen(monthlyRemaining)}</div>
+                  <div className="text-[10px] text-[#7C8496]">達成＋−</div>
+                  <div
+                    className={`font-meter text-sm mt-0.5 ${
+                      monthlyAchievementDiff > 0
+                        ? "text-[#6EE7A8]"
+                        : monthlyAchievementDiff < 0
+                          ? "text-[#FF6B57]"
+                          : "text-[#EDEFF3]"
+                    }`}
+                  >
+                    {monthlyAchievementDiff > 0 ? "+" : monthlyAchievementDiff < 0 ? "-" : ""}¥{yen(Math.abs(monthlyAchievementDiff))}
+                  </div>
                 </div>
               </div>
             </div>
