@@ -394,6 +394,11 @@ function getPeriodBounds(iso) {
   }
   return { start: toISO(start), end: toISO(end) };
 }
+// 「year年month月度」(前月21日〜当月20日)の開始日を求める。月度計算自体はgetPeriodBoundsを再利用する。
+function getPeriodStartForYearMonth(year, month) {
+  const iso = `${year}-${String(month).padStart(2, "0")}-20`;
+  return getPeriodBounds(iso).start;
+}
 function getMonthlyTarget(iso) {
   const dt = parseISO(iso);
   const month = dt.getMonth() + 1;
@@ -645,6 +650,9 @@ export default function WorkLog() {
   const [lastBackupAt, setLastBackupAt] = useState(() => localStorage.getItem(LAST_BACKUP_KEY));
   const [pendingRestore, setPendingRestore] = useState(null); // { entries, validCount, appMismatch, versionMismatch, sourceApp, sourceVersion }
   const [restoreBusy, setRestoreBusy] = useState(false);
+  // MONTHLY JUMPで開いている年度(1つだけ)。初期値は現在開いている月度の年。
+  // 一度ユーザーが閉じたら、selectedDateが変わっても自動では開き直さない。
+  const [expandedJumpYear, setExpandedJumpYear] = useState(() => Number(getPeriodBounds(selectedDate).end.slice(0, 4)));
   const dateInputRef = useRef(null);
   const restoreInputRef = useRef(null);
   const toastTimer = useRef(null);
@@ -679,6 +687,16 @@ export default function WorkLog() {
   }, [form]);
 
   const monthlyLogRange = useMemo(() => getPeriodRange(selectedDate), [selectedDate]);
+  // MONTHLY JUMPの年度一覧。2024年度から「現在年 or 選択中の年」の遅い方まで、新しい年度が上にくる降順。
+  const jumpYearOptions = useMemo(() => {
+    const startYear = 2024;
+    const endYear = Math.max(Number(todayISO().slice(0, 4)), Number(selectedDate.slice(0, 4)));
+    const years = [];
+    for (let y = endYear; y >= startYear; y--) years.push(y);
+    return years;
+  }, [selectedDate]);
+  const selectedJumpYear = Number(monthlyLogRange.end.slice(0, 4));
+  const selectedJumpMonth = Number(monthlyLogRange.end.slice(5, 7));
   const monthlyLogEntries = useMemo(() => {
     const byDate = entries.reduce((acc, entry) => {
       if (entry?.date) acc[entry.date] = ensureRecordFormat(entry);
@@ -2014,6 +2032,50 @@ export default function WorkLog() {
               })}
             </div>
           )}
+        </div>
+
+        {/* MONTHLY JUMP */}
+        <div className="mx-5 mt-6">
+          <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter mb-1">MONTHLY JUMP</div>
+          <div className="text-[11px] text-[#7C8496] mb-3">月度を選んで移動</div>
+          <div className="rounded-2xl bg-[#181D25] border border-[#232A36] p-3 space-y-2">
+            {jumpYearOptions.map((year) => {
+              const isYearOpen = expandedJumpYear === year;
+              return (
+                <div key={year}>
+                  <button
+                    type="button"
+                    onClick={() => setExpandedJumpYear((cur) => (cur === year ? null : year))}
+                    className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-[#171C24] border border-[#232A36] text-[13px] text-[#EDEFF3]"
+                  >
+                    <span>{year}年度</span>
+                    <span className="text-[#7C8496]">{isYearOpen ? "⌄" : "›"}</span>
+                  </button>
+                  {isYearOpen ? (
+                    <div className="grid grid-cols-3 gap-1.5 mt-1.5">
+                      {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => {
+                        const isSelected = selectedJumpYear === year && selectedJumpMonth === month;
+                        return (
+                          <button
+                            key={month}
+                            type="button"
+                            onClick={() => changeDateSafely(getPeriodStartForYearMonth(year, month))}
+                            className={`rounded-lg border px-2 py-2 text-[12px] text-center transition-colors ${
+                              isSelected
+                                ? "border-[#FFB454] bg-[#FFB454]/10 text-[#FFB454]"
+                                : "border-[#2A3140] text-[#8B93A1] hover:border-[#FFB454]"
+                            }`}
+                          >
+                            {month}月度
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         {/* Data management */}
