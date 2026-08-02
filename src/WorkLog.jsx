@@ -36,6 +36,7 @@ const WEATHER_OPTIONS = [
 ];
 const WEEKDAY_JA = ["日", "月", "火", "水", "木", "金", "土"];
 const FIRST_WORKDAY = "2024-12-22";
+const HOLIDAY_AUTO_CYCLE_START = "2026-07-21";
 const DAY_STATUS = {
   WORKDAY: "workday",
   DAYOFF: "dayoff",
@@ -96,8 +97,8 @@ function getPeriodRange(iso) {
   return getPeriodBounds(iso);
 }
 function getScheduledHolidayType(iso) {
-  const base = "2026-07-21";
-  const diff = diffDays(iso, base);
+  if (iso < HOLIDAY_AUTO_CYCLE_START) return null;
+  const diff = diffDays(iso, HOLIDAY_AUTO_CYCLE_START);
   if (diff % 14 !== 0) return null;
   const index = Math.floor(diff / 14);
   return index % 2 === 0 ? "black" : "red";
@@ -954,6 +955,7 @@ export default function WorkLog() {
   const isRedHoliday = isHoliday && form.holidayType === "red";
   const showNormalEntryForm = canShowWorkForm({ dayStatus: effectiveStatus, holidayType: form.holidayType });
   const isDayOff = effectiveStatus === DAY_STATUS.DAYOFF;
+  const isBeforeHolidayAutoCycle = selectedDate < HOLIDAY_AUTO_CYCLE_START;
   const isTodaySelected = selectedDate === todayISO();
   const statusLabel = getStatusLabel(effectiveStatus);
   const currentSalesTotal = (Number(form.sales) || 0) + (Number(form.salesExtra) || 0);
@@ -1104,7 +1106,7 @@ export default function WorkLog() {
                 ) : null}
               </div>
             </div>
-            {(isWorkday || isHoliday) ? (
+            {(isWorkday || isHoliday || (isDayOff && isBeforeHolidayAutoCycle)) ? (
               <div>
                 {!holidayOptionsOpen ? (
                   <div className="flex gap-2">
