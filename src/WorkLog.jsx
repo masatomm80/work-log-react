@@ -202,7 +202,7 @@ function getNoteSummary(notes, maxLength = 40) {
 }
 function getRecordFormatFromDate(date) {
   if (!date) return "current";
-  return date >= "2024-12-21" && date <= "2026-07-30" ? "legacy" : "current";
+  return date >= "2024-12-21" && date <= "2026-07-20" ? "legacy" : "current";
 }
 function inferRecordFormat(entry) {
   if (!entry) return "current";
@@ -1092,6 +1092,7 @@ export default function WorkLog() {
       </div>
 
       <div className="max-w-[560px] mx-auto">
+        {isCurrentMode ? (
         <div className="mx-5 mt-4 rounded-2xl border border-[#232A36] bg-[#171C24] px-4 py-3">
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-3">
@@ -1225,8 +1226,10 @@ export default function WorkLog() {
             ) : null}
           </div>
         </div>
+        ) : null}
         {showNormalEntryForm ? (
           <>
+            {!isLegacyMode ? (
             <div className="mx-5 mt-3 rounded-2xl border border-[#232A36] bg-[#171C24] overflow-hidden">
               <button
                 type="button"
@@ -1267,6 +1270,7 @@ export default function WorkLog() {
                 </div>
               )}
             </div>
+            ) : null}
             <div className="mx-5 mt-5 rounded-2xl bg-[#181D25] border border-[#232A36] overflow-hidden">
               <div className="border-l-4 border-[#FFB454] px-5 py-5">
                 <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter">売上 SALES</div>
