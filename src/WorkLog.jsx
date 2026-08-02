@@ -555,7 +555,6 @@ export default function WorkLog() {
   const [saveState, setSaveState] = useState("idle"); // idle | saved | error
   const [selectedDate, setSelectedDate] = useState(todayISO());
   const [form, setForm] = useState(emptyForm(todayISO()));
-  const [periodAnchor, setPeriodAnchor] = useState(todayISO());
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [toast, setToast] = useState(null);
   const [holidayMoveTarget, setHolidayMoveTarget] = useState("");
@@ -601,7 +600,8 @@ export default function WorkLog() {
   }, [entries, monthlyLogRange]);
   const workSchedule = useMemo(() => calculateWorkSchedule(monthlyLogRange, entries), [monthlyLogRange, entries]);
 
-  const periodBounds = useMemo(() => getPeriodBounds(periodAnchor), [periodAnchor]);
+  // MONTHLY TOTALもMONTHLY LOG/WORK SCHEDULEと同じ月度(selectedDateが属する期間)を使う。
+  const periodBounds = monthlyLogRange;
   const periodEntries = useMemo(
     () => entries.filter((e) => e.date >= periodBounds.start && e.date <= periodBounds.end),
     [entries, periodBounds]
@@ -674,7 +674,6 @@ export default function WorkLog() {
   const handleGoToToday = () => {
     const today = todayISO();
     setSelectedDate(today);
-    setPeriodAnchor(today);
   };
 
   const updateField = (key, value) => {
@@ -1589,7 +1588,7 @@ export default function WorkLog() {
           <div className="rounded-2xl bg-[#181D25] border border-[#232A36] overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3 border-b border-[#232A36]">
               <button
-                onClick={() => setPeriodAnchor((a) => shiftPeriod(a, -1))}
+                onClick={() => setSelectedDate((d) => shiftPeriod(d, -1))}
                 className="p-1.5 -ml-1.5 text-[#7C8496] active:text-[#6EE7A8] transition-colors"
                 aria-label="前の期間"
               >
@@ -1602,7 +1601,7 @@ export default function WorkLog() {
                 <span className="text-[#7C8496] text-[11px] ml-1.5">締め</span>
               </div>
               <button
-                onClick={() => setPeriodAnchor((a) => shiftPeriod(a, 1))}
+                onClick={() => setSelectedDate((d) => shiftPeriod(d, 1))}
                 className="p-1.5 -mr-1.5 text-[#7C8496] active:text-[#6EE7A8] transition-colors"
                 aria-label="次の期間"
               >
