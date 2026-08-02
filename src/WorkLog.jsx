@@ -14,17 +14,16 @@ import {
 const STORAGE_KEY = "workLogEntries";
 const DUTY_TAGS = [
   "日赤",
-  "日赤夜①",
-  "日赤夜②",
   "寝台①",
   "寝台②",
   "横関",
-  "横関夜①",
-  "横関夜②",
+  "横関夜",
   "宿直",
   "研修",
   "貸切",
   "赤字（出勤）",
+  "赤字半日",
+  "黒字半日",
 ];
 const PRESET_TAGS = ["日赤", "日赤夜", "寝台", "宿直", "横関", "横関夜", "早出", "明け", "点検書類提出"];
 const WEATHER_OPTIONS = [
@@ -101,13 +100,43 @@ function getScheduledHolidayType(iso) {
   const index = Math.floor(diff / 14);
   return index % 2 === 0 ? "black" : "red";
 }
+function normalizeDutyTag(tag) {
+  if (!tag) return tag;
+  if (tag === "横関夜①" || tag === "横関夜②") return "横関夜";
+  return tag;
+}
+function normalizeDutyTags(tags) {
+  if (!Array.isArray(tags)) return [];
+  return Array.from(new Set(tags.map(normalizeDutyTag).filter(Boolean)));
+}
+function getHolidayFraction(type) {
+  if (type === "black-half" || type === "red-half") return 0.5;
+  if (type === "black" || type === "red" || type === "paid") return 1;
+  return null;
+}
+function isFullRestHolidayType(type) {
+  return type === "black" || type === "paid";
+}
+function isHalfDayHolidayType(type) {
+  return type === "black-half" || type === "red-half";
+}
 function findManualEntry(entries, date) {
   if (!Array.isArray(entries)) return null;
-  return entries.find((entry) => entry.date === date) || null;
+  return entries.find((entry) => {
+    if (!entry || entry.date !== date) return false;
+    return (
+      entry.dayStatus === DAY_STATUS.HOLIDAY ||
+      Boolean(entry.holidayType) ||
+      Boolean(entry.holidayTransfer) ||
+      Boolean(entry.holidayOrigin)
+    );
+  });
 }
 function getHolidayInfo(date, entries) {
   const manual = findManualEntry(entries, date);
   if (manual) {
+    const isMovedDestination = Boolean(manual.holidayOrigin && manual.holidayOrigin !== manual.date);
+    const isMovedFrom = Boolean(manual.holidayTransfer?.originalDate === manual.date && manual.holidayTransfer?.movedDate);
     return {
       type: manual.holidayType || null,
       isActual: manual.dayStatus === DAY_STATUS.HOLIDAY,
@@ -115,9 +144,9 @@ function getHolidayInfo(date, entries) {
       isOverride: !!manual.id,
       date,
       holidayOrigin: manual.holidayOrigin || manual.date,
-      isMovedDestination: manual.holidayOrigin && manual.holidayOrigin !== manual.date,
-      originalDate:
-        manual.holidayOrigin && manual.holidayOrigin !== manual.date ? manual.holidayOrigin : undefined,
+      isMovedDestination,
+      isMovedFrom,
+      originalDate: isMovedDestination ? manual.holidayOrigin : manual.holidayTransfer?.originalDate,
     };
   }
   const scheduledType = getScheduledHolidayType(date);
@@ -135,6 +164,9 @@ function getMonthlyLogEntryType(entry, holidayInfo) {
   const entryStatus = getEffectiveDayStatus(entry.date, entry, holidayInfo);
   if (holidayInfo?.isMovedFrom) return "holiday";
   if (entryStatus === DAY_STATUS.DAYOFF) return "dayoff";
+  const holidayType = entry.holidayType || holidayInfo?.type;
+  const isHolidayWorkEntry = isWorkedEntry(entry) && ["red", "black-half", "red-half"].includes(holidayType);
+  if (isHolidayWorkEntry) return "worked";
   if (entryStatus === DAY_STATUS.HOLIDAY) return "holiday";
   if (isWorkedEntry(entry)) return "worked";
   if (hasMonthlyLogContents(entry)) return "scheduled";
@@ -144,11 +176,15 @@ function getHolidayLabel(entry, holidayInfo) {
   if (holidayInfo?.isMovedFrom) {
     if (holidayInfo.type === "black") return "黒字公休日（移動済み）";
     if (holidayInfo.type === "red") return "赤字公休日（移動済み）";
+    if (holidayInfo.type === "black-half") return "黒字半日公休日（移動済み）";
+    if (holidayInfo.type === "red-half") return "赤字半日公休日（移動済み）";
     return "公休日（移動済み）";
   }
   if (holidayInfo?.isMovedDestination || holidayInfo?.isScheduled) {
     if (holidayInfo.type === "black") return "黒字公休日";
     if (holidayInfo.type === "red") return "赤字公休日";
+    if (holidayInfo.type === "black-half") return "黒字半日公休日";
+    if (holidayInfo.type === "red-half") return "赤字半日公休日";
     return "公休日";
   }
   if (!entry) return "公休日";
@@ -157,6 +193,10 @@ function getHolidayLabel(entry, holidayInfo) {
       return "黒字公休日";
     case "red":
       return "赤字公休日";
+    case "black-half":
+      return "黒字半日公休日";
+    case "red-half":
+      return "赤字半日公休日";
     case "paid":
       return "有給休暇";
     default:
@@ -198,7 +238,7 @@ function inferRecordFormat(entry) {
 function ensureRecordFormat(entry) {
   if (!entry || typeof entry !== "object") return entry;
   const recordFormat = entry.recordFormat || inferRecordFormat(entry);
-  const dutyTags = Array.isArray(entry.dutyTags) ? entry.dutyTags : [];
+  const dutyTags = normalizeDutyTags(Array.isArray(entry.dutyTags) ? entry.dutyTags : []);
   return { ...entry, recordFormat, dutyTags };
 }
 function isLegacyRecord(entry) {
@@ -332,27 +372,26 @@ function calculateWorkSchedule(periodRange, entries) {
   let calendarWorkDays = 0;
   let blackHolidayDays = 0;
   let redHolidayDays = 0;
-  const byDate = {};
+  let blackHalfHolidayDays = 0;
+  let redHalfHolidayDays = 0;
   while (cursor <= periodRange.end) {
     const isWork = isWorkDay(cursor);
     if (isWork) calendarWorkDays += 1;
     const h = getHolidayInfo(cursor, entries);
     if (h && h.type === "black") {
-      // count applied black holidays (skip moved-from scheduled ones)
       if (!(h.isScheduled && h.isMovedFrom)) blackHolidayDays += 1;
     } else if (h && h.type === "red") {
       if (!(h.isScheduled && h.isMovedFrom)) redHolidayDays += 1;
+    } else if (h && h.type === "black-half") {
+      if (!(h.isScheduled && h.isMovedFrom)) blackHalfHolidayDays += 0.5;
+    } else if (h && h.type === "red-half") {
+      if (!(h.isScheduled && h.isMovedFrom)) redHalfHolidayDays += 0.5;
     }
-    byDate[cursor] = h || null;
     cursor = addDays(cursor, 1);
   }
 
-  // Calculate plannedWorkDays: calendarWorkDays - blackHolidayDays
-  // Note: red holidays are initially considered workdays (included in plannedWorkDays).
-  // In future we may subtract specific red holidays when users mark them as休む (not implemented now).
-  const plannedWorkDays = Math.max(0, calendarWorkDays - blackHolidayDays);
+  const plannedWorkDays = Math.max(0, calendarWorkDays - blackHolidayDays - blackHalfHolidayDays);
 
-  // completedWorkDays: count entries in period that satisfy isWorkedEntry
   const completedWorkDays = entries.reduce((acc, e) => {
     if (!e || !e.date) return acc;
     if (e.date < periodRange.start || e.date > periodRange.end) return acc;
@@ -364,8 +403,8 @@ function calculateWorkSchedule(periodRange, entries) {
 
   return {
     calendarWorkDays,
-    blackHolidayDays,
-    redHolidayDays,
+    blackHolidayDays: blackHolidayDays + blackHalfHolidayDays,
+    redHolidayDays: redHolidayDays + redHalfHolidayDays,
     plannedWorkDays,
     completedWorkDays,
     remainingWorkDays,
@@ -538,6 +577,7 @@ export default function WorkLog() {
     const record = {
       ...formToSave,
       dayStatus: formToSave.dayStatus || getEffectiveDayStatus(formToSave.date, formToSave, getHolidayInfo(formToSave.date, entries)),
+      dutyTags: normalizeDutyTags(Array.isArray(formToSave.dutyTags) ? formToSave.dutyTags : []),
       recordFormat,
       id,
       holidayOrigin:
@@ -623,8 +663,10 @@ export default function WorkLog() {
   const isMovedDestination = Boolean(holidayInfo?.isMovedDestination);
   const isMovedFrom = Boolean(holidayInfo?.isMovedFrom);
   const isScheduledHoliday = Boolean(holidayInfo?.isScheduled);
+  const isHolidayWithWorkEntry = isHoliday && ["red", "black-half", "red-half"].includes(form.holidayType);
   const allowHolidayTypeChange = Boolean(isMovedFrom || form.dayStatus === DAY_STATUS.HOLIDAY);
   const holidayToggleDisabled = Boolean(holidayInfo?.isScheduled || holidayInfo?.isMovedDestination);
+  const showFullEntryForm = !isHoliday || isHolidayWithWorkEntry;
 
   const moveHoliday = () => {
     if (!isScheduledHoliday || isMovedFrom) {
@@ -761,6 +803,7 @@ export default function WorkLog() {
     const record = {
       ...form,
       dayStatus: form.dayStatus || getEffectiveDayStatus(form.date, form, getHolidayInfo(form.date, entries)),
+      dutyTags: normalizeDutyTags(Array.isArray(form.dutyTags) ? form.dutyTags : []),
       recordFormat,
       id,
       holidayOrigin:
@@ -1023,7 +1066,9 @@ export default function WorkLog() {
                 {[
                   { label: "勤務日", status: DAY_STATUS.WORKDAY, holidayType: null },
                   { label: "黒字公休日", status: DAY_STATUS.HOLIDAY, holidayType: "black" },
+                  { label: "黒字半日公休日", status: DAY_STATUS.HOLIDAY, holidayType: "black-half" },
                   { label: "赤字公休日", status: DAY_STATUS.HOLIDAY, holidayType: "red" },
+                  { label: "赤字半日公休日", status: DAY_STATUS.HOLIDAY, holidayType: "red-half" },
                   { label: "有給休暇", status: DAY_STATUS.HOLIDAY, holidayType: "paid" },
                 ].map((option) => {
                   const selected =
@@ -1394,6 +1439,56 @@ export default function WorkLog() {
               </div>
             </div>
           </>
+        ) : showFullEntryForm ? (
+          <div className="mx-5 mt-5 space-y-4">
+            <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-3">
+              <div className="text-[12px] text-[#7C8496]">日付</div>
+              <div className="font-medium text-[#EDEFF3]">{m}/{d} ({wd})</div>
+            </div>
+            {isHoliday && !isHolidayWithWorkEntry ? (
+              <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-3">
+                <div className="text-[12px] text-[#7C8496]">勤務状態</div>
+                <div className="font-medium text-[#EDEFF3]">公休日</div>
+              </div>
+            ) : null}
+            {isHoliday ? (
+              <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-[12px] text-[#7C8496]">公休日チェック</div>
+                  <button
+                    onClick={handleToggleHoliday}
+                    className={`flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition-colors ${
+                      isHoliday
+                        ? "border-[#FFB454] bg-[#FFB454]/10 text-[#FFB454]"
+                        : "border-[#2A3140] text-[#8B93A1]"
+                    }`}
+                  >
+                    <span className={`flex h-4 w-4 items-center justify-center rounded border ${isHoliday ? "border-[#FFB454] bg-[#FFB454] text-[#12151A]" : "border-[#8B93A1]"}`}>
+                      {isHoliday ? "✓" : ""}
+                    </span>
+                    公休日
+                  </button>
+                </div>
+              </div>
+            ) : null}
+            <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-3">
+              <div className="text-[12px] text-[#7C8496]">コメント</div>
+              <textarea
+                value={form.notes}
+                onChange={(e) => updateField("notes", e.target.value)}
+                placeholder="メモを入力"
+                rows={3}
+                className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-4 text-[17px] text-[#EDEFF3] focus:outline-none focus:border-[#FFB454] resize-none"
+              />
+            </div>
+            <button
+              onClick={handleSave}
+              className="w-full flex items-center justify-center gap-2 bg-[#FFB454] text-[#12151A] font-medium text-lg py-5 rounded-xl active:bg-[#FFC578] transition-colors"
+            >
+              <Save size={20} />
+              {saveState === "saved" ? "保存しました" : saveState === "error" ? "保存に失敗しました" : "この日を保存"}
+            </button>
+          </div>
         ) : (
           <div className="mx-5 mt-5 space-y-4">
             <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-3">
