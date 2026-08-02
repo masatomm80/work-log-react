@@ -108,16 +108,23 @@ function findManualEntry(entries, date) {
 function getHolidayInfo(date, entries) {
   const manual = findManualEntry(entries, date);
   if (manual) {
+    const rawType = manual.holidayType || null;
+    // Normalize legacy variants to base types for behavior
+    let baseType = rawType;
+    if (rawType === "red-work" || rawType === "red-off") baseType = "red";
+    // For stored 'red' rely on stored dayStatus when present; if missing, default to HOLIDAY
+    const manualDayStatus = Object.prototype.hasOwnProperty.call(manual, "dayStatus") ? manual.dayStatus : undefined;
+    const isActual = manualDayStatus === DAY_STATUS.HOLIDAY || (rawType === "red" && manualDayStatus === undefined);
     return {
-      type: manual.holidayType || null,
-      isActual: manual.dayStatus === DAY_STATUS.HOLIDAY,
+      type: baseType,
+      isActual,
       isManual: true,
       isOverride: !!manual.id,
       date,
       holidayOrigin: manual.holidayOrigin || manual.date,
       isMovedDestination: manual.holidayOrigin && manual.holidayOrigin !== manual.date,
-      originalDate:
-        manual.holidayOrigin && manual.holidayOrigin !== manual.date ? manual.holidayOrigin : undefined,
+      originalDate: manual.holidayOrigin && manual.holidayOrigin !== manual.date ? manual.holidayOrigin : undefined,
+      manualDayStatus,
     };
   }
   const scheduledType = getScheduledHolidayType(date);
@@ -141,35 +148,32 @@ function getMonthlyLogEntryType(entry, holidayInfo) {
   return "empty";
 }
 function getHolidayLabel(entry, holidayInfo) {
+  // Prefer moved-from label
   if (holidayInfo?.isMovedFrom) {
-    if (holidayInfo.type === "black") return "黒字公休日（移動済み）";
-    if (holidayInfo.type === "red") return "赤字公休日（移動済み）";
-    if (holidayInfo.type === "black-half") return "黒字半日公休日（移動済み）";
-    if (holidayInfo.type === "red-half") return "赤字半日公休日（移動済み）";
+    const t = holidayInfo.type;
+    if (t === "black") return "黒字公休日（移動済み）";
+    if (t === "black-half") return "黒字半日公休日（移動済み）";
+    if (t === "red-half") return "赤字半日公休日（移動済み）";
+    if (t === "red") return "赤字公休日（移動済み）";
+    if (t === "paid") return "有給休暇（移動済み）";
     return "公休日（移動済み）";
   }
-  if (holidayInfo?.isMovedDestination || holidayInfo?.isScheduled) {
-    if (holidayInfo.type === "black") return "黒字公休日";
-    if (holidayInfo.type === "red") return "赤字公休日";
-    if (holidayInfo.type === "black-half") return "黒字半日公休日";
-    if (holidayInfo.type === "red-half") return "赤字半日公休日";
-    return "公休日";
+
+  // Determine holidayType and effective dayStatus
+  const date = entry?.date || holidayInfo?.date;
+  const baseType = entry?.holidayType || holidayInfo?.type;
+  const effectiveStatus = getEffectiveDayStatus(date, entry, holidayInfo);
+
+  if (!baseType) return "公休日";
+
+  if (baseType === "red") {
+    return effectiveStatus === DAY_STATUS.WORKDAY ? "赤字公休日（出勤）" : "赤字公休日（休み）";
   }
-  if (!entry) return "公休日";
-  switch (entry.holidayType) {
-    case "black":
-      return "黒字公休日";
-    case "red":
-      return "赤字公休日";
-    case "black-half":
-      return "黒字半日公休日";
-    case "red-half":
-      return "赤字半日公休日";
-    case "paid":
-      return "有給休暇";
-    default:
-      return "公休日";
-  }
+  if (baseType === "black") return "黒字公休日";
+  if (baseType === "black-half") return "黒字半日公休日";
+  if (baseType === "red-half") return "赤字半日公休日";
+  if (baseType === "paid") return "有給休暇";
+  return "公休日";
 }
 function isWorkedEntry(entry) {
   if (!entry || !entry.date) return false;
@@ -223,8 +227,13 @@ function inferHolidayFraction(holidayType) {
   return 1;
 }
 
-function canEnterWorkDataForHoliday(holidayType) {
-  return ["red", "black-half", "red-half"].includes(holidayType);
+function canShowWorkForm(entryLike) {
+  // entryLike can be an object with dayStatus and holidayType, or just a holidayType string
+  if (!entryLike) return false;
+  const dayStatus = typeof entryLike === "object" ? entryLike.dayStatus : undefined;
+  const holidayType = typeof entryLike === "object" ? entryLike.holidayType : entryLike;
+  if (dayStatus === DAY_STATUS.WORKDAY) return true;
+  return ["black-half", "red-half"].includes(holidayType);
 }
 
 function ensureRecordFormat(entry) {
@@ -365,26 +374,39 @@ function calculateWorkSchedule(periodRange, entries) {
   let cursor = periodRange.start;
   let calendarWorkDays = 0;
   let blackHolidayDays = 0;
-  let redHolidayDays = 0;
+  let blackHalfDays = 0;
+  let redOffDays = 0;
+  let paidHolidayDays = 0;
   const byDate = {};
   while (cursor <= periodRange.end) {
     const isWork = isWorkDay(cursor);
     if (isWork) calendarWorkDays += 1;
     const h = getHolidayInfo(cursor, entries);
+    const entry = entries.find((e) => e.date === cursor) || null;
+    const effectiveStatus = getEffectiveDayStatus(cursor, entry, h);
     if (h && h.type === "black") {
-      // count applied black holidays (skip moved-from scheduled ones)
       if (!(h.isScheduled && h.isMovedFrom)) blackHolidayDays += 1;
-    } else if (h && h.type === "red") {
-      if (!(h.isScheduled && h.isMovedFrom)) redHolidayDays += 1;
+    }
+    if (h && h.type === "black-half") {
+      // black-half reduces planned work by 0.5 when treated as half holiday
+      blackHalfDays += 1;
+    }
+    if (h && h.type === "paid") {
+      if (effectiveStatus === DAY_STATUS.HOLIDAY) paidHolidayDays += 1;
+    }
+    // Count red-off (red holiday where effective status is HOLIDAY)
+    if (h && h.type === "red" && effectiveStatus === DAY_STATUS.HOLIDAY) {
+      if (!(h.isScheduled && h.isMovedFrom)) redOffDays += 1;
     }
     byDate[cursor] = h || null;
     cursor = addDays(cursor, 1);
   }
 
-  // Calculate plannedWorkDays: calendarWorkDays - blackHolidayDays
-  // Note: red holidays are initially considered workdays (included in plannedWorkDays).
-  // In future we may subtract specific red holidays when users mark them as休む (not implemented now).
-  const plannedWorkDays = Math.max(0, calendarWorkDays - blackHolidayDays);
+  // Calculate plannedWorkDays: calendarWorkDays minus full black, paid, and black-half(0.5) and red-off
+  const plannedWorkDays = Math.max(
+    0,
+    calendarWorkDays - blackHolidayDays - paidHolidayDays - redOffDays - blackHalfDays * 0.5
+  );
 
   // completedWorkDays: count entries in period that satisfy isWorkedEntry
   const completedWorkDays = entries.reduce((acc, e) => {
@@ -399,7 +421,9 @@ function calculateWorkSchedule(periodRange, entries) {
   return {
     calendarWorkDays,
     blackHolidayDays,
-    redHolidayDays,
+    redHolidayDays: redOffDays,
+    blackHalfDays,
+    paidHolidayDays,
     plannedWorkDays,
     completedWorkDays,
     remainingWorkDays,
@@ -484,7 +508,9 @@ const emptyForm = (date) => ({
 
 function normalizeForm(date, existing, holidayInfo = null) {
   const entry = ensureRecordFormat(existing || {});
-  const holidayType = entry.dayStatus === DAY_STATUS.HOLIDAY ? entry.holidayType || holidayInfo?.type : entry.holidayType || null;
+  // Normalize legacy variants 'red-work'/'red-off' to base 'red' for form behavior
+  const rawHolidayType = entry.dayStatus === DAY_STATUS.HOLIDAY ? entry.holidayType || holidayInfo?.type : entry.holidayType || null;
+  const holidayType = rawHolidayType === "red-work" || rawHolidayType === "red-off" ? "red" : rawHolidayType;
   return {
     ...emptyForm(date),
     ...entry,
@@ -572,15 +598,20 @@ export default function WorkLog() {
   const saveFormEntry = (formToSave) => {
     const id = formToSave.id || `${formToSave.date}-${Date.now()}`;
     const recordFormat = inferRecordFormat(formToSave);
+    // Normalize holidayType: do not store red-work/red-off; store base types only
+    let normalizedHolidayType = formToSave.holidayType || null;
+    if (normalizedHolidayType === "red-work" || normalizedHolidayType === "red-off") normalizedHolidayType = "red";
+    const computedDayStatus = formToSave.dayStatus || getEffectiveDayStatus(formToSave.date, formToSave, getHolidayInfo(formToSave.date, entries));
+    // If holidayType is 'red' and dayStatus undefined, default to HOLIDAY
+    const finalDayStatus = typeof formToSave.dayStatus !== "undefined" ? formToSave.dayStatus : computedDayStatus;
     const record = {
       ...formToSave,
-      dayStatus: formToSave.dayStatus || getEffectiveDayStatus(formToSave.date, formToSave, getHolidayInfo(formToSave.date, entries)),
+      holidayType: normalizedHolidayType,
+      dayStatus: finalDayStatus,
+      holidayFraction: formToSave.holidayFraction ?? inferHolidayFraction(normalizedHolidayType),
       recordFormat,
       id,
-      holidayOrigin:
-        formToSave.dayStatus === DAY_STATUS.HOLIDAY && formToSave.holidayType
-          ? formToSave.holidayOrigin || formToSave.date
-          : undefined,
+      holidayOrigin: finalDayStatus === DAY_STATUS.HOLIDAY && normalizedHolidayType ? formToSave.holidayOrigin || formToSave.date : undefined,
     };
     const next = entries.some((e) => e.id === id)
       ? entries.map((e) => (e.id === id ? record : e))
@@ -795,15 +826,19 @@ export default function WorkLog() {
 
     const id = form.id || `${form.date}-${Date.now()}`;
     const recordFormat = inferRecordFormat(form);
+    // Normalize holidayType for storage
+    let normalizedHolidayType = form.holidayType || null;
+    if (normalizedHolidayType === "red-work" || normalizedHolidayType === "red-off") normalizedHolidayType = "red";
+    const computedDayStatus = form.dayStatus || getEffectiveDayStatus(form.date, form, getHolidayInfo(form.date, entries));
+    const finalDayStatus = typeof form.dayStatus !== "undefined" ? form.dayStatus : computedDayStatus;
     const record = {
       ...form,
-      dayStatus: form.dayStatus || getEffectiveDayStatus(form.date, form, getHolidayInfo(form.date, entries)),
+      holidayType: normalizedHolidayType,
+      dayStatus: finalDayStatus,
+      holidayFraction: form.holidayFraction ?? inferHolidayFraction(normalizedHolidayType),
       recordFormat,
       id,
-      holidayOrigin:
-        form.dayStatus === DAY_STATUS.HOLIDAY && form.holidayType
-          ? form.holidayOrigin || form.date
-          : undefined,
+      holidayOrigin: finalDayStatus === DAY_STATUS.HOLIDAY && normalizedHolidayType ? form.holidayOrigin || form.date : undefined,
     };
     const next = entries.some((e) => e.id === id)
       ? entries.map((e) => (e.id === id ? record : e))
@@ -908,7 +943,7 @@ export default function WorkLog() {
   const isWorkday = effectiveStatus === DAY_STATUS.WORKDAY;
   const isHoliday = effectiveStatus === DAY_STATUS.HOLIDAY;
   const isRedHoliday = isHoliday && form.holidayType === "red";
-  const showNormalEntryForm = isWorkday || canEnterWorkDataForHoliday(form.holidayType);
+  const showNormalEntryForm = canShowWorkForm({ dayStatus: effectiveStatus, holidayType: form.holidayType });
   const isDayOff = effectiveStatus === DAY_STATUS.DAYOFF;
   const isTodaySelected = selectedDate === todayISO();
   const statusLabel = getStatusLabel(effectiveStatus);
@@ -955,14 +990,13 @@ export default function WorkLog() {
 
   const setDateStatus = (status, holidayType = null) => {
     setForm((f) => {
-      const next = {
-        ...f,
-        dayStatus: status,
-        holidayType: status === DAY_STATUS.HOLIDAY ? holidayType : null,
-        holidayFraction: status === DAY_STATUS.HOLIDAY ? inferHolidayFraction(holidayType) : 1,
-      };
-      if (status === DAY_STATUS.WORKDAY) {
-        next.holidayType = null;
+      const next = { ...f };
+      next.dayStatus = status;
+      // if caller provided a holidayType (may be null), use it; otherwise keep existing
+      const provided = typeof holidayType !== "undefined" ? holidayType : f.holidayType;
+      next.holidayType = provided;
+      next.holidayFraction = provided ? inferHolidayFraction(provided) : 1;
+      if (status === DAY_STATUS.WORKDAY && !next.holidayType) {
         next.holidayOrigin = null;
       }
       return next;
@@ -1104,14 +1138,17 @@ export default function WorkLog() {
                     {[
                       { label: "勤務日", status: DAY_STATUS.WORKDAY, holidayType: null },
                       { label: "黒字公休日", status: DAY_STATUS.HOLIDAY, holidayType: "black" },
-                      { label: "赤字公休日", status: DAY_STATUS.HOLIDAY, holidayType: "red" },
-                      { label: "黒字半日公休日", status: DAY_STATUS.HOLIDAY, holidayType: "black-half" },
-                      { label: "赤字半日公休日", status: DAY_STATUS.HOLIDAY, holidayType: "red-half" },
+                      { label: "赤字公休日（出勤）", status: DAY_STATUS.WORKDAY, holidayType: "red" },
+                      { label: "赤字公休日（休み）", status: DAY_STATUS.HOLIDAY, holidayType: "red" },
+                      { label: "黒字半日公休日", status: DAY_STATUS.WORKDAY, holidayType: "black-half" },
+                      { label: "赤字半日公休日", status: DAY_STATUS.WORKDAY, holidayType: "red-half" },
                       { label: "有給休暇", status: DAY_STATUS.HOLIDAY, holidayType: "paid" },
                     ].map((option) => {
                       const selected =
                         option.status === DAY_STATUS.WORKDAY
-                          ? effectiveStatus === DAY_STATUS.WORKDAY
+                          ? option.holidayType
+                            ? effectiveStatus === DAY_STATUS.WORKDAY && form.holidayType === option.holidayType
+                            : effectiveStatus === DAY_STATUS.WORKDAY && !form.holidayType
                           : effectiveStatus === DAY_STATUS.HOLIDAY && form.holidayType === option.holidayType;
                       return (
                         <button
