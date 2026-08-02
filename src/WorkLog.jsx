@@ -523,6 +523,7 @@ export default function WorkLog() {
   const [toast, setToast] = useState(null);
   const [holidayMoveTarget, setHolidayMoveTarget] = useState("");
   const [dutyStampOpen, setDutyStampOpen] = useState(false);
+  const [holidayOptionsOpen, setHolidayOptionsOpen] = useState(false);
   const dateInputRef = useRef(null);
   const restoreInputRef = useRef(null);
   const toastTimer = useRef(null);
@@ -966,6 +967,12 @@ export default function WorkLog() {
       }
       return next;
     });
+    // close the holiday options UI after a manual selection
+    try {
+      setHolidayOptionsOpen(false);
+    } catch (e) {
+      // ignore
+    }
   };
 
   const handleToggleHoliday = () => {
@@ -1055,34 +1062,81 @@ export default function WorkLog() {
               </div>
             </div>
             {(isWorkday || isHoliday) ? (
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  { label: "勤務日", status: DAY_STATUS.WORKDAY, holidayType: null },
-                  { label: "黒字公休日", status: DAY_STATUS.HOLIDAY, holidayType: "black" },
-                  { label: "赤字公休日", status: DAY_STATUS.HOLIDAY, holidayType: "red" },
-                  { label: "黒字半日公休日", status: DAY_STATUS.HOLIDAY, holidayType: "black-half" },
-                  { label: "赤字半日公休日", status: DAY_STATUS.HOLIDAY, holidayType: "red-half" },
-                  { label: "有給休暇", status: DAY_STATUS.HOLIDAY, holidayType: "paid" },
-                ].map((option) => {
-                  const selected =
-                    option.status === DAY_STATUS.WORKDAY
-                      ? effectiveStatus === DAY_STATUS.WORKDAY
-                      : effectiveStatus === DAY_STATUS.HOLIDAY && form.holidayType === option.holidayType;
-                  return (
+              <div>
+                {!holidayOptionsOpen ? (
+                  <div className="flex gap-2">
                     <button
-                      key={`${option.status}-${option.holidayType || "default"}`}
                       type="button"
-                      onClick={() => setDateStatus(option.status, option.holidayType)}
+                      onClick={() => setDateStatus(DAY_STATUS.WORKDAY, null)}
                       className={`rounded-full border px-3 py-2 text-sm transition-colors text-left ${
-                        selected
+                        effectiveStatus === DAY_STATUS.WORKDAY
                           ? "border-[#FFB454] bg-[#FFB454]/10 text-[#FFB454]"
                           : "border-[#2A3140] text-[#8B93A1] hover:border-[#FFB454]"
                       }`}
                     >
-                      {option.label}
+                      勤務日
                     </button>
-                  );
-                })}
+                    {isHoliday ? (
+                      <div className="flex items-center gap-2">
+                        <div className="rounded-full border px-3 py-2 text-sm text-[#EDEFF3] border-[#2A3140] bg-[#171C24]">
+                          {getHolidayLabel(form, holidayInfo)}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setHolidayOptionsOpen(true)}
+                          className="rounded-full border px-3 py-2 text-sm border-[#2A3140] text-[#8B93A1] hover:border-[#FFB454]"
+                        >
+                          公休日を変更
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setHolidayOptionsOpen(true)}
+                        className="rounded-full border px-3 py-2 text-sm border-[#2A3140] text-[#8B93A1] hover:border-[#FFB454]"
+                      >
+                        公休日に変更
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { label: "勤務日", status: DAY_STATUS.WORKDAY, holidayType: null },
+                      { label: "黒字公休日", status: DAY_STATUS.HOLIDAY, holidayType: "black" },
+                      { label: "赤字公休日", status: DAY_STATUS.HOLIDAY, holidayType: "red" },
+                      { label: "黒字半日公休日", status: DAY_STATUS.HOLIDAY, holidayType: "black-half" },
+                      { label: "赤字半日公休日", status: DAY_STATUS.HOLIDAY, holidayType: "red-half" },
+                      { label: "有給休暇", status: DAY_STATUS.HOLIDAY, holidayType: "paid" },
+                    ].map((option) => {
+                      const selected =
+                        option.status === DAY_STATUS.WORKDAY
+                          ? effectiveStatus === DAY_STATUS.WORKDAY
+                          : effectiveStatus === DAY_STATUS.HOLIDAY && form.holidayType === option.holidayType;
+                      return (
+                        <button
+                          key={`${option.status}-${option.holidayType || "default"}`}
+                          type="button"
+                          onClick={() => setDateStatus(option.status, option.holidayType)}
+                          className={`rounded-full border px-3 py-2 text-sm transition-colors text-left ${
+                            selected
+                              ? "border-[#FFB454] bg-[#FFB454]/10 text-[#FFB454]"
+                              : "border-[#2A3140] text-[#8B93A1] hover:border-[#FFB454]"
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      onClick={() => setHolidayOptionsOpen(false)}
+                      className="col-span-2 rounded-full border px-3 py-2 text-sm border-[#2A3140] text-[#8B93A1] hover:border-[#FFB454]"
+                    >
+                      閉じる
+                    </button>
+                  </div>
+                )}
               </div>
             ) : null}
             {isScheduledHoliday ? (
