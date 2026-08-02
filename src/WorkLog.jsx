@@ -567,7 +567,9 @@ export default function WorkLog() {
   const currentEntries = useMemo(() => entries.filter(isCurrentRecord), [entries]);
   const legacyEntries = useMemo(() => entries.filter(isLegacyRecord), [entries]);
   const holidayInfo = useMemo(() => getHolidayInfo(selectedDate, entries), [selectedDate, entries]);
-  const activeRecordFormat = form.recordFormat || getRecordFormatFromDate(selectedDate);
+  // 画面表示モード(legacy/current)は保存済みrecordFormatに関係なく、日付だけで判定する。
+  // entryのrecordFormat自体(保存データ)は書き換えない。
+  const activeRecordFormat = getRecordFormatFromDate(selectedDate);
   const isLegacyMode = activeRecordFormat === "legacy";
   const isCurrentMode = activeRecordFormat === "current";
 
