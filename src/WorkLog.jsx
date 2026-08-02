@@ -19,12 +19,13 @@ const DUTY_TAGS = [
   "寝台①",
   "寝台②",
   "横関",
-  "横関夜①",
-  "横関夜②",
+  "横関夜",
   "宿直",
   "研修",
   "貸切",
-  "赤字（出勤）",
+  "赤字（1日）",
+  "赤字（半日）",
+  "黒字（半日）",
 ];
 const PRESET_TAGS = ["日赤", "日赤夜", "寝台", "宿直", "横関", "横関夜", "早出", "明け", "点検書類提出"];
 const WEATHER_OPTIONS = [
@@ -240,7 +241,12 @@ function ensureRecordFormat(entry) {
   if (!entry || typeof entry !== "object") return entry;
   const normalizedEntry = normalizeFixedDateEntry(entry);
   const recordFormat = normalizedEntry.recordFormat || inferRecordFormat(normalizedEntry);
-  const dutyTags = Array.isArray(normalizedEntry.dutyTags) ? normalizedEntry.dutyTags : [];
+  const rawDutyTags = Array.isArray(normalizedEntry.dutyTags) ? normalizedEntry.dutyTags : [];
+  const dutyTags = rawDutyTags.map((t) => {
+    if (t === "横関夜①" || t === "横関夜②") return "横関夜";
+    if (t === "赤字（出勤）") return "赤字（1日）";
+    return t;
+  });
   const holidayFraction = normalizedEntry.holidayFraction ?? inferHolidayFraction(normalizedEntry.holidayType);
   return { ...normalizedEntry, recordFormat, dutyTags, holidayFraction };
 }
@@ -452,11 +458,14 @@ function loadEntries() {
     const parsed = raw ? JSON.parse(raw) : [];
     if (!Array.isArray(parsed)) return [];
     const normalized = parsed.map(ensureRecordFormat);
-    const needsPersist = normalized.some((entry, index) =>
-      !entry.recordFormat ||
-      entry.recordFormat !== parsed[index]?.recordFormat ||
-      !Array.isArray(parsed[index]?.dutyTags)
-    );
+    const needsPersist = normalized.some((entry, index) => {
+      if (!entry.recordFormat) return true;
+      if (entry.recordFormat !== parsed[index]?.recordFormat) return true;
+      if (!Array.isArray(parsed[index]?.dutyTags)) return true;
+      const orig = Array.isArray(parsed[index]?.dutyTags) ? parsed[index].dutyTags : [];
+      if (JSON.stringify(orig) !== JSON.stringify(entry.dutyTags)) return true;
+      return false;
+    });
     if (needsPersist) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
     }
