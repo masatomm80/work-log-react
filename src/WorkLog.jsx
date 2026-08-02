@@ -97,7 +97,8 @@ function getPeriodRange(iso) {
   return getPeriodBounds(iso);
 }
 function getScheduledHolidayType(iso) {
-  if (iso < HOLIDAY_AUTO_CYCLE_START) return null;
+  // 基準日(HOLIDAY_AUTO_CYCLE_START)から14日周期で黒字・赤字を交互算出する。
+  // 過去方向(legacy期間を含む)にも同じ周期をそのまま適用する。
   const diff = diffDays(iso, HOLIDAY_AUTO_CYCLE_START);
   if (diff % 14 !== 0) return null;
   const index = Math.floor(diff / 14);
@@ -1094,7 +1095,6 @@ export default function WorkLog() {
       </div>
 
       <div className="max-w-[560px] mx-auto">
-        {isCurrentMode ? (
         <div className="mx-5 mt-4 rounded-2xl border border-[#232A36] bg-[#171C24] px-4 py-3">
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-3">
@@ -1228,8 +1228,7 @@ export default function WorkLog() {
             ) : null}
           </div>
         </div>
-        ) : null}
-        {showNormalEntryForm ? (
+        {(showNormalEntryForm || isLegacyMode) ? (
           <>
             {!isLegacyMode ? (
             <div className="mx-5 mt-3 rounded-2xl border border-[#232A36] bg-[#171C24] overflow-hidden">
