@@ -1651,35 +1651,36 @@ export default function WorkLog() {
         {/* WORK SCHEDULE */}
         <div className="mx-5 mt-6">
           <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter mb-1">WORK SCHEDULE</div>
-          <div className="text-[11px] text-[#7C8496] mb-2">今月度の勤務予定・実績</div>
-          <div className="rounded-2xl bg-[#181D25] border border-[#232A36] px-3 py-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-[12px] text-[#7C8496]">残り勤務</div>
-                <div className="font-meter text-xl font-bold text-[#EDEFF3] mt-0.5">{workSchedule.remainingWorkDays}日</div>
-              </div>
-              <div className="grid grid-cols-1 gap-1 text-right">
-                <div className="text-[10px] text-[#7C8496]">暦上勤務</div>
-                <div className="font-meter text-xs text-[#EDEFF3]">{workSchedule.calendarWorkDays}日</div>
-              </div>
+          <div className="text-[11px] text-[#7C8496] mb-3">今月度の勤務予定・実績</div>
+          <div className="rounded-2xl bg-[#181D25] border border-[#232A36] px-4 py-4">
+            <div className="mb-4">
+              <div className="text-[12px] text-[#7C8496]">残り勤務</div>
+              <div className="font-meter text-3xl font-bold text-[#EDEFF3] mt-1">{workSchedule.remainingWorkDays}日</div>
             </div>
-
-            <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-              <div className="rounded-xl bg-[#171C24] px-2 py-1.5">
-                <div className="text-[9px] text-[#7C8496]">予定勤務</div>
-                <div className="font-meter text-xs text-[#EDEFF3] mt-0.5">{workSchedule.plannedWorkDays}日</div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-left">
+              <div className="rounded-2xl bg-[#171C24] px-3 py-3">
+                <div className="text-[10px] text-[#7C8496]">暦上日数</div>
+                <div className="font-meter text-xl font-semibold text-[#EDEFF3] mt-1">{workSchedule.calendarWorkDays}日</div>
               </div>
-              <div className="rounded-xl bg-[#171C24] px-2 py-1.5">
-                <div className="text-[9px] text-[#7C8496]">勤務済み</div>
-                <div className="font-meter text-xs text-[#EDEFF3] mt-0.5">{workSchedule.completedWorkDays}日</div>
+              <div className="rounded-2xl bg-[#171C24] px-3 py-3">
+                <div className="text-[10px] text-[#7C8496]">予定勤務</div>
+                <div className="font-meter text-xl font-semibold text-[#EDEFF3] mt-1">{workSchedule.plannedWorkDays}日</div>
               </div>
-              <div className="rounded-xl bg-[#171C24] px-2 py-1.5">
-                <div className="text-[9px] text-[#7C8496]">黒字公休</div>
-                <div className="font-meter text-xs text-[#EDEFF3] mt-0.5 text-[#9CA3AF]">{workSchedule.blackHolidayDays}日</div>
+              <div className="rounded-2xl bg-[#171C24] px-3 py-3">
+                <div className="text-[10px] text-[#7C8496]">勤務済み</div>
+                <div className="font-meter text-xl font-semibold text-[#EDEFF3] mt-1">{workSchedule.completedWorkDays}日</div>
               </div>
-              <div className="rounded-xl bg-[#171C24] px-2 py-1.5">
-                <div className="text-[9px] text-[#7C8496]">赤字公休</div>
-                <div className="font-meter text-xs text-[#EDEFF3] mt-0.5 text-[#FF6B57]">{workSchedule.redHolidayDays}日</div>
+              <div className="rounded-2xl bg-[#171C24] px-3 py-3">
+                <div className="text-[10px] text-[#7C8496]">黒字公休</div>
+                <div className="font-meter text-xl font-semibold text-[#EDEFF3] mt-1 text-[#9CA3AF]">{workSchedule.blackHolidayDays}日</div>
+              </div>
+              <div className="rounded-2xl bg-[#171C24] px-3 py-3">
+                <div className="text-[10px] text-[#7C8496]">赤字公休</div>
+                <div className="font-meter text-xl font-semibold text-[#EDEFF3] mt-1 text-[#FF6B57]">{workSchedule.redHolidayDays}日</div>
+              </div>
+              <div className="rounded-2xl bg-[#171C24] px-3 py-3">
+                <div className="text-[10px] text-[#7C8496]">有給休暇</div>
+                <div className="font-meter text-xl font-semibold text-[#EDEFF3] mt-1 text-[#A78BFA]">{workSchedule.paidHolidayDays}日</div>
               </div>
             </div>
           </div>
