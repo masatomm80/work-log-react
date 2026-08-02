@@ -195,11 +195,26 @@ function inferRecordFormat(entry) {
   if (entry.recordFormat) return entry.recordFormat;
   return getRecordFormatFromDate(entry.date);
 }
+function normalizeFixedDateEntry(entry) {
+  if (!entry || entry.date !== "2026-08-08") return entry;
+  const normalized = {
+    ...entry,
+    dayStatus: DAY_STATUS.WORKDAY,
+    holidayType: null,
+    holidayOrigin: null,
+  };
+  if (Object.prototype.hasOwnProperty.call(normalized, "holidayTransfer")) {
+    const { holidayTransfer, ...rest } = normalized;
+    return rest;
+  }
+  return normalized;
+}
 function ensureRecordFormat(entry) {
   if (!entry || typeof entry !== "object") return entry;
-  const recordFormat = entry.recordFormat || inferRecordFormat(entry);
-  const dutyTags = Array.isArray(entry.dutyTags) ? entry.dutyTags : [];
-  return { ...entry, recordFormat, dutyTags };
+  const normalizedEntry = normalizeFixedDateEntry(entry);
+  const recordFormat = normalizedEntry.recordFormat || inferRecordFormat(normalizedEntry);
+  const dutyTags = Array.isArray(normalizedEntry.dutyTags) ? normalizedEntry.dutyTags : [];
+  return { ...normalizedEntry, recordFormat, dutyTags };
 }
 function isLegacyRecord(entry) {
   return inferRecordFormat(entry) === "legacy";
