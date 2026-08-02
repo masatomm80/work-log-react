@@ -1628,7 +1628,18 @@ export default function WorkLog() {
                 <div className="font-meter text-base font-medium mt-0.5">{periodTotals.days}日</div>
               </div>
             </div>
-            {/* Monthly sales summary removed to avoid duplication with top-of-screen display */}
+            <div className="border-t border-[#232A36] px-4 py-3">
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <div className="rounded-xl bg-[#181D25] px-3 py-2">
+                  <div className="text-[10px] text-[#7C8496]">今月ノルマ</div>
+                  <div className="font-meter text-sm text-[#EDEFF3] mt-0.5">¥{yen(monthlyTarget)}</div>
+                </div>
+                <div className="rounded-xl bg-[#181D25] px-3 py-2">
+                  <div className="text-[10px] text-[#7C8496]">達成残額</div>
+                  <div className="font-meter text-sm text-[#EDEFF3] mt-0.5">¥{yen(monthlyRemaining)}</div>
+                </div>
+              </div>
+            </div>
             {periodTotals.hours > 0 && (
               <div className="px-4 py-2.5 border-t border-[#232A36] text-[12px] text-[#7C8496] font-meter">
                 合計勤務時間 {(Math.round(periodTotals.hours * 10) / 10).toFixed(1)}h
