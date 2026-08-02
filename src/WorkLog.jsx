@@ -870,6 +870,8 @@ export default function WorkLog() {
   const effectiveStatus = getEffectiveDayStatus(selectedDate, form, holidayInfo);
   const isWorkday = effectiveStatus === DAY_STATUS.WORKDAY;
   const isHoliday = effectiveStatus === DAY_STATUS.HOLIDAY;
+  const isRedHoliday = isHoliday && form.holidayType === "red";
+  const showNormalEntryForm = isWorkday || isRedHoliday;
   const isDayOff = effectiveStatus === DAY_STATUS.DAYOFF;
   const isTodaySelected = selectedDate === todayISO();
   const statusLabel = getStatusLabel(effectiveStatus);
@@ -1085,7 +1087,7 @@ export default function WorkLog() {
             ) : null}
           </div>
         </div>
-        {isWorkday ? (
+        {showNormalEntryForm ? (
           <>
             <div className="mx-5 mt-3 rounded-2xl border border-[#232A36] bg-[#171C24] overflow-hidden">
               <button
