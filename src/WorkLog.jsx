@@ -144,11 +144,15 @@ function getHolidayLabel(entry, holidayInfo) {
   if (holidayInfo?.isMovedFrom) {
     if (holidayInfo.type === "black") return "黒字公休日（移動済み）";
     if (holidayInfo.type === "red") return "赤字公休日（移動済み）";
+    if (holidayInfo.type === "black-half") return "黒字半日公休日（移動済み）";
+    if (holidayInfo.type === "red-half") return "赤字半日公休日（移動済み）";
     return "公休日（移動済み）";
   }
   if (holidayInfo?.isMovedDestination || holidayInfo?.isScheduled) {
     if (holidayInfo.type === "black") return "黒字公休日";
     if (holidayInfo.type === "red") return "赤字公休日";
+    if (holidayInfo.type === "black-half") return "黒字半日公休日";
+    if (holidayInfo.type === "red-half") return "赤字半日公休日";
     return "公休日";
   }
   if (!entry) return "公休日";
@@ -157,6 +161,10 @@ function getHolidayLabel(entry, holidayInfo) {
       return "黒字公休日";
     case "red":
       return "赤字公休日";
+    case "black-half":
+      return "黒字半日公休日";
+    case "red-half":
+      return "赤字半日公休日";
     case "paid":
       return "有給休暇";
     default:
@@ -209,12 +217,23 @@ function normalizeFixedDateEntry(entry) {
   }
   return normalized;
 }
+function inferHolidayFraction(holidayType) {
+  if (holidayType === "black-half" || holidayType === "red-half") return 0.5;
+  if (holidayType === "black" || holidayType === "red" || holidayType === "paid") return 1;
+  return 1;
+}
+
+function canEnterWorkDataForHoliday(holidayType) {
+  return ["red", "black-half", "red-half"].includes(holidayType);
+}
+
 function ensureRecordFormat(entry) {
   if (!entry || typeof entry !== "object") return entry;
   const normalizedEntry = normalizeFixedDateEntry(entry);
   const recordFormat = normalizedEntry.recordFormat || inferRecordFormat(normalizedEntry);
   const dutyTags = Array.isArray(normalizedEntry.dutyTags) ? normalizedEntry.dutyTags : [];
-  return { ...normalizedEntry, recordFormat, dutyTags };
+  const holidayFraction = normalizedEntry.holidayFraction ?? inferHolidayFraction(normalizedEntry.holidayType);
+  return { ...normalizedEntry, recordFormat, dutyTags, holidayFraction };
 }
 function isLegacyRecord(entry) {
   return inferRecordFormat(entry) === "legacy";
@@ -460,6 +479,7 @@ const emptyForm = (date) => ({
   dayStatus: getEffectiveDayStatus(date, null),
   holidayType: null,
   holidayOrigin: null,
+  holidayFraction: 1,
 });
 
 function normalizeForm(date, existing, holidayInfo = null) {
@@ -472,6 +492,7 @@ function normalizeForm(date, existing, holidayInfo = null) {
     dayStatus: getEffectiveDayStatus(date, entry, holidayInfo),
     holidayType,
     holidayOrigin: entry.holidayOrigin || null,
+    holidayFraction: entry.holidayFraction ?? inferHolidayFraction(entry.holidayType || holidayType),
   };
 }
 
@@ -886,7 +907,7 @@ export default function WorkLog() {
   const isWorkday = effectiveStatus === DAY_STATUS.WORKDAY;
   const isHoliday = effectiveStatus === DAY_STATUS.HOLIDAY;
   const isRedHoliday = isHoliday && form.holidayType === "red";
-  const showNormalEntryForm = isWorkday || isRedHoliday;
+  const showNormalEntryForm = isWorkday || canEnterWorkDataForHoliday(form.holidayType);
   const isDayOff = effectiveStatus === DAY_STATUS.DAYOFF;
   const isTodaySelected = selectedDate === todayISO();
   const statusLabel = getStatusLabel(effectiveStatus);
@@ -933,7 +954,12 @@ export default function WorkLog() {
 
   const setDateStatus = (status, holidayType = null) => {
     setForm((f) => {
-      const next = { ...f, dayStatus: status, holidayType: status === DAY_STATUS.HOLIDAY ? holidayType : null };
+      const next = {
+        ...f,
+        dayStatus: status,
+        holidayType: status === DAY_STATUS.HOLIDAY ? holidayType : null,
+        holidayFraction: status === DAY_STATUS.HOLIDAY ? inferHolidayFraction(holidayType) : 1,
+      };
       if (status === DAY_STATUS.WORKDAY) {
         next.holidayType = null;
         next.holidayOrigin = null;
@@ -1034,6 +1060,8 @@ export default function WorkLog() {
                   { label: "勤務日", status: DAY_STATUS.WORKDAY, holidayType: null },
                   { label: "黒字公休日", status: DAY_STATUS.HOLIDAY, holidayType: "black" },
                   { label: "赤字公休日", status: DAY_STATUS.HOLIDAY, holidayType: "red" },
+                  { label: "黒字半日公休日", status: DAY_STATUS.HOLIDAY, holidayType: "black-half" },
+                  { label: "赤字半日公休日", status: DAY_STATUS.HOLIDAY, holidayType: "red-half" },
                   { label: "有給休暇", status: DAY_STATUS.HOLIDAY, holidayType: "paid" },
                 ].map((option) => {
                   const selected =
