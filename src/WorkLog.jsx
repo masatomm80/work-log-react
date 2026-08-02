@@ -639,7 +639,7 @@ export default function WorkLog() {
   const isMovedFrom = Boolean(holidayInfo?.isMovedFrom);
   const isScheduledHoliday = Boolean(holidayInfo?.isScheduled);
   const allowHolidayTypeChange = Boolean(isMovedFrom || form.dayStatus === DAY_STATUS.HOLIDAY);
-  const holidayToggleDisabled = Boolean(holidayInfo?.isScheduled || holidayInfo?.isMovedDestination);
+  const holidayToggleDisabled = Boolean(isMovedDestination);
 
   const moveHoliday = () => {
     if (!isScheduledHoliday || isMovedFrom) {
@@ -932,24 +932,17 @@ export default function WorkLog() {
   const companyRadioCountDisplay = Math.max((Number(form.count) || 0) - (Number(form.handRaisedCount) || 0) - (Number(form.appRideCount) || 0), 0);
 
   const setDateStatus = (status, holidayType = null) => {
-    if (status === DAY_STATUS.HOLIDAY && (holidayType === "black" || holidayType === "red")) {
-      if (!holidayInfo?.isScheduled && !holidayInfo?.isMovedDestination) {
-        showToast("この日付では黒字公休日・赤字公休日を設定できません。自動算出された公休日を移動してください。\n");
-        return;
+    setForm((f) => {
+      const next = { ...f, dayStatus: status, holidayType: status === DAY_STATUS.HOLIDAY ? holidayType : null };
+      if (status === DAY_STATUS.WORKDAY) {
+        next.holidayType = null;
+        next.holidayOrigin = null;
       }
-      if (holidayInfo?.isActual && holidayInfo.type !== holidayType) {
-        showToast("自動算出された公休日の種類は変更できません。");
-        return;
-      }
-    }
-    setForm((f) => ({ ...f, dayStatus: status, holidayType: status === DAY_STATUS.HOLIDAY ? holidayType : null }));
+      return next;
+    });
   };
 
   const handleToggleHoliday = () => {
-    if (holidayToggleDisabled) {
-      showToast("自動算出された公休日はここでは切り替えできません。移動機能をご利用ください。");
-      return;
-    }
     if (isHoliday) {
       setDateStatus(DAY_STATUS.WORKDAY, null);
       return;
