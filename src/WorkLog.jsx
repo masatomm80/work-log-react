@@ -277,6 +277,39 @@ function hasFormData(form) {
       form.notes
   );
 }
+// 自動保存の比較用データ。id・recordFormat・holidayTransfer(保存日時を含む)や
+// 展開状態などのUI専用stateは含めず、保存内容として意味のある項目だけをキー順固定で抜き出す。
+function getComparableFormData(record) {
+  if (!record) return null;
+  return {
+    date: record.date ?? null,
+    dayStatus: record.dayStatus ?? null,
+    holidayType: record.holidayType ?? null,
+    holidayFraction: record.holidayFraction ?? null,
+    holidayOrigin: record.holidayOrigin ?? null,
+    dutyTags: Array.isArray(record.dutyTags) ? [...record.dutyTags] : [],
+    notes: record.notes ?? "",
+    sales: record.sales ?? "",
+    salesExtra: record.salesExtra ?? "",
+    tip: record.tip ?? "",
+    count: record.count ?? "",
+    handRaisedCount: record.handRaisedCount ?? "",
+    appRideCount: record.appRideCount ?? "",
+    totalDistance: record.totalDistance ?? "",
+    occupiedDistance: record.occupiedDistance ?? "",
+    condition: record.condition ?? "",
+    weather: Array.isArray(record.weather) ? [...record.weather] : [],
+    workStart: record.workStart ?? "",
+    workEnd: record.workEnd ?? "",
+    breakTime: record.breakTime ?? "",
+    workHours: record.workHours ?? "",
+    hoursOverride: Boolean(record.hoursOverride),
+  };
+}
+function isFormUnchanged(record, comparableSnapshot) {
+  if (!comparableSnapshot) return false;
+  return JSON.stringify(getComparableFormData(record)) === JSON.stringify(comparableSnapshot);
+}
 function getConditionLabel(condition) {
   switch (condition) {
     case "good":
@@ -552,7 +585,8 @@ function csvEscape(v) {
 
 export default function WorkLog() {
   const [entries, setEntries] = useState(() => loadEntries().map(ensureRecordFormat));
-  const [saveState, setSaveState] = useState("idle"); // idle | saved | error
+  const [saveState, setSaveState] = useState("idle"); // idle | saved | error (手動保存ボタンの一時的なラベル用、既存のまま)
+  const [autoSaveStatus, setAutoSaveStatus] = useState("saved"); // saving | saved | error (自動保存ステータス表示用)
   const [selectedDate, setSelectedDate] = useState(todayISO());
   const [form, setForm] = useState(emptyForm(todayISO()));
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
@@ -563,6 +597,10 @@ export default function WorkLog() {
   const dateInputRef = useRef(null);
   const restoreInputRef = useRef(null);
   const toastTimer = useRef(null);
+  const formRef = useRef(form);
+  const autoSaveTimerRef = useRef(null);
+  const lastSavedSnapshotRef = useRef(null);
+  const skipNextAutoSaveRef = useRef(true);
 
   const currentEntries = useMemo(() => entries.filter(isCurrentRecord), [entries]);
   const legacyEntries = useMemo(() => entries.filter(isLegacyRecord), [entries]);
@@ -575,8 +613,19 @@ export default function WorkLog() {
 
   useEffect(() => {
     const existing = entries.find((e) => e.date === selectedDate);
-    setForm(existing ? normalizeForm(selectedDate, existing, holidayInfo) : normalizeForm(selectedDate, null, holidayInfo));
+    const nextForm = existing
+      ? normalizeForm(selectedDate, existing, holidayInfo)
+      : normalizeForm(selectedDate, null, holidayInfo);
+    // 日付変更・entries更新(自分自身の保存やバックアップ復元を含む)によるフォーム反映は
+    // ユーザー入力ではないため、直後の自動保存監視を1回だけ無視させる。
+    skipNextAutoSaveRef.current = true;
+    lastSavedSnapshotRef.current = getComparableFormData(nextForm);
+    setForm(nextForm);
   }, [selectedDate, entries, holidayInfo]);
+
+  useEffect(() => {
+    formRef.current = form;
+  }, [form]);
 
   const monthlyLogRange = useMemo(() => getPeriodRange(selectedDate), [selectedDate]);
   const monthlyLogEntries = useMemo(() => {
@@ -608,43 +657,116 @@ export default function WorkLog() {
   );
   const selectedDutyTags = Array.isArray(form.dutyTags) ? form.dutyTags : [];
   const dutyStampSummary = selectedDutyTags.length > 0 ? selectedDutyTags.join("　") : "未設定";
-  const saveFormEntry = (formToSave) => {
-    const id = formToSave.id || `${formToSave.date}-${Date.now()}`;
-    const recordFormat = inferRecordFormat(formToSave);
+  // 手動保存(manual)・自動保存(auto)・日付移動前の即時保存(flush)で共通利用する保存関数。
+  // 検証・正規化・entries/localStorageの更新ロジックは1箇所にまとめている。
+  const saveCurrentForm = ({ source }) => {
+    const current = formRef.current;
+
+    if (isFormUnchanged(current, lastSavedSnapshotRef.current)) {
+      setAutoSaveStatus("saved");
+      if (source === "manual") {
+        setSaveState("saved");
+        showToast("保存しました");
+        setTimeout(() => setSaveState("idle"), 1200);
+      }
+      return { ok: true, skipped: true, entries };
+    }
+
+    const isLegacyForm = isLegacyRecord(current);
+    const handRaisedValue = Number(current.handRaisedCount) || 0;
+    const appRideValue = Number(current.appRideCount) || 0;
+    const countValue = Number(current.count) || 0;
+    const occupiedValue = Number(current.occupiedDistance) || 0;
+    const totalDistanceValue = Number(current.totalDistance) || 0;
+
+    if (!isLegacyForm) {
+      let validationError = "";
+      if (handRaisedValue > countValue) validationError = "手上げ乗車回数は通常の回数を超えません";
+      else if (appRideValue > countValue) validationError = "アプリ乗車回数は通常の回数を超えません";
+      else if (handRaisedValue + appRideValue > countValue) validationError = "手上げ乗車回数とアプリ乗車回数の合計が通常の回数を超えます";
+      else if (occupiedValue > totalDistanceValue) validationError = "営業距離は走行距離を超えません";
+
+      if (validationError) {
+        if (source === "manual" || source === "flush") showToast(validationError);
+        setAutoSaveStatus("error");
+        return { ok: false, skipped: false, entries };
+      }
+    }
+
+    if (source === "auto") setAutoSaveStatus("saving");
+
+    const id = current.id || `${current.date}-${Date.now()}`;
+    const recordFormat = inferRecordFormat(current);
     // Normalize holidayType: do not store red-work/red-off; store base types only
-    let normalizedHolidayType = formToSave.holidayType || null;
+    let normalizedHolidayType = current.holidayType || null;
     if (normalizedHolidayType === "red-work" || normalizedHolidayType === "red-off") normalizedHolidayType = "red";
-    const computedDayStatus = formToSave.dayStatus || getEffectiveDayStatus(formToSave.date, formToSave, getHolidayInfo(formToSave.date, entries));
+    const computedDayStatus = current.dayStatus || getEffectiveDayStatus(current.date, current, getHolidayInfo(current.date, entries));
     // If holidayType is 'red' and dayStatus undefined, default to HOLIDAY
-    const finalDayStatus = typeof formToSave.dayStatus !== "undefined" ? formToSave.dayStatus : computedDayStatus;
+    const finalDayStatus = typeof current.dayStatus !== "undefined" ? current.dayStatus : computedDayStatus;
     const record = {
-      ...formToSave,
+      ...current,
       holidayType: normalizedHolidayType,
       dayStatus: finalDayStatus,
-      holidayFraction: formToSave.holidayFraction ?? inferHolidayFraction(normalizedHolidayType),
+      holidayFraction: current.holidayFraction ?? inferHolidayFraction(normalizedHolidayType),
       recordFormat,
       id,
-      holidayOrigin: finalDayStatus === DAY_STATUS.HOLIDAY && normalizedHolidayType ? formToSave.holidayOrigin || formToSave.date : undefined,
+      holidayOrigin: finalDayStatus === DAY_STATUS.HOLIDAY && normalizedHolidayType ? current.holidayOrigin || current.date : undefined,
     };
     const next = entries.some((e) => e.id === id)
       ? entries.map((e) => (e.id === id ? record : e))
-      : [...entries.filter((e) => e.date !== formToSave.date), record];
+      : [...entries.filter((e) => e.date !== current.date), record];
+
     setEntries(next);
     setForm(record);
+    formRef.current = record;
     const ok = persistEntries(next);
-    setSaveState(ok ? "saved" : "error");
-    showToast(ok ? "保存しました" : "保存に失敗しました");
-    setTimeout(() => setSaveState("idle"), 1200);
-    return ok;
+    if (ok) lastSavedSnapshotRef.current = getComparableFormData(record);
+
+    if (source === "manual") {
+      setSaveState(ok ? "saved" : "error");
+      showToast(ok ? "保存しました" : "保存に失敗しました");
+      setTimeout(() => setSaveState("idle"), 1200);
+    } else if (source === "flush" && !ok) {
+      showToast("保存に失敗しました");
+    }
+    setAutoSaveStatus(ok ? "saved" : "error");
+
+    return { ok, skipped: false, entries: next };
+  };
+
+  // 保留中の自動保存タイマーを解除し、その場で即時保存する(日付移動・公休日移動の直前に使用)。
+  const flushPendingSave = () => {
+    clearTimeout(autoSaveTimerRef.current);
+    return saveCurrentForm({ source: "flush" });
+  };
+
+  // 日付変更・読込直後のフォーム反映では発火させず、入力が止まってから800ms後に1回だけ自動保存する。
+  useEffect(() => {
+    if (skipNextAutoSaveRef.current) {
+      skipNextAutoSaveRef.current = false;
+      return undefined;
+    }
+    clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(() => {
+      saveCurrentForm({ source: "auto" });
+    }, 800);
+    return () => clearTimeout(autoSaveTimerRef.current);
+  }, [form]);
+
+  // 日付を変える処理はすべてここを経由させ、移動前に未保存の変更をflushする。
+  const changeDateSafely = (nextDateOrUpdater) => {
+    const result = flushPendingSave();
+    if (result.ok === false) return;
+    setSelectedDate((current) =>
+      typeof nextDateOrUpdater === "function" ? nextDateOrUpdater(current) : nextDateOrUpdater
+    );
   };
 
   const toggleDutyTag = (tag) => {
     setForm((f) => {
       const current = Array.isArray(f.dutyTags) ? f.dutyTags : [];
       const next = current.includes(tag) ? current.filter((item) => item !== tag) : [...current, tag];
-      const nextForm = { ...f, dutyTags: next };
-      saveFormEntry(nextForm);
-      return nextForm;
+      return { ...f, dutyTags: next };
     });
   };
   const periodTotals = useMemo(
@@ -673,7 +795,7 @@ export default function WorkLog() {
 
   const handleGoToToday = () => {
     const today = todayISO();
-    setSelectedDate(today);
+    changeDateSafely(today);
   };
 
   const updateField = (key, value) => {
@@ -719,20 +841,29 @@ export default function WorkLog() {
       showToast("移動先は移動元と同じ日付にできません。");
       return;
     }
-    const targetHolidayInfo = getHolidayInfo(holidayMoveTarget, entries);
+    // entriesを直接書き換える前に、現在フォームの未保存の変更を先にflushする。
+    const flushResult = flushPendingSave();
+    if (flushResult.ok === false) {
+      showToast("保存に失敗したため、公休日の移動を中止しました。");
+      return;
+    }
+    const baseEntries = flushResult.entries;
+    const targetHolidayInfo = getHolidayInfo(holidayMoveTarget, baseEntries);
     if (targetHolidayInfo?.isActual || targetHolidayInfo?.isScheduled || targetHolidayInfo?.isMovedDestination) {
       showToast("移動先はすでに公休日になっています。");
       return;
     }
     const originalDate = selectedDate;
     const movedDate = holidayMoveTarget;
+    // flush後の最新entriesを基準に、この日の公休種別を取り直す(flushで内容が変わった場合に備える)。
+    const currentHolidayInfo = getHolidayInfo(originalDate, baseEntries) || holidayInfo;
     const transfer = {
       originalDate,
       movedDate,
-      holidayType: holidayInfo.type,
+      holidayType: currentHolidayInfo.type,
       movedAt: new Date().toISOString(),
     };
-    const originalEntry = entries.find((entry) => entry.date === originalDate);
+    const originalEntry = baseEntries.find((entry) => entry.date === originalDate);
     const updatedOriginal = originalEntry
       ? {
           ...ensureRecordFormat(originalEntry),
@@ -747,13 +878,13 @@ export default function WorkLog() {
           holidayTransfer: transfer,
           dayStatus: getEffectiveDayStatus(originalDate, null),
         };
-    const next = entries.filter((entry) => entry.date !== originalDate && entry.date !== movedDate);
-    const existingTarget = entries.find((entry) => entry.date === movedDate);
+    const next = baseEntries.filter((entry) => entry.date !== originalDate && entry.date !== movedDate);
+    const existingTarget = baseEntries.find((entry) => entry.date === movedDate);
     const targetEntry = existingTarget
       ? {
           ...ensureRecordFormat(existingTarget),
           dayStatus: DAY_STATUS.HOLIDAY,
-          holidayType: holidayInfo.type,
+          holidayType: currentHolidayInfo.type,
           holidayOrigin: originalDate,
           holidayTransfer: transfer,
         }
@@ -761,7 +892,7 @@ export default function WorkLog() {
           ...emptyForm(movedDate),
           id: `${movedDate}-${Date.now()}-dest`,
           dayStatus: DAY_STATUS.HOLIDAY,
-          holidayType: holidayInfo.type,
+          holidayType: currentHolidayInfo.type,
           holidayOrigin: originalDate,
           holidayTransfer: transfer,
         };
@@ -778,14 +909,21 @@ export default function WorkLog() {
       showToast("この日付は移動先の公休ではありません。");
       return;
     }
+    // entriesを直接書き換える前に、現在フォームの未保存の変更を先にflushする。
+    const flushResult = flushPendingSave();
+    if (flushResult.ok === false) {
+      showToast("保存に失敗したため、公休日の移動解除を中止しました。");
+      return;
+    }
+    const baseEntries = flushResult.entries;
     const movedDate = selectedDate;
-    const targetEntry = entries.find((entry) => entry.date === movedDate && entry.holidayTransfer);
+    const targetEntry = baseEntries.find((entry) => entry.date === movedDate && entry.holidayTransfer);
     if (!targetEntry) {
       showToast("解除対象の移動データが見つかりませんでした。");
       return;
     }
     const originalDate = targetEntry.holidayTransfer.originalDate;
-    const next = entries.map((entry) => {
+    const next = baseEntries.map((entry) => {
       if (entry.date === movedDate) {
         const cleared = { ...ensureRecordFormat(entry) };
         delete cleared.holidayTransfer;
@@ -810,65 +948,22 @@ export default function WorkLog() {
   };
 
   const handleSave = () => {
-    const isLegacyForm = isLegacyRecord(form);
-    const handRaisedValue = Number(form.handRaisedCount) || 0;
-    const appRideValue = Number(form.appRideCount) || 0;
-    const countValue = Number(form.count) || 0;
-    const occupiedValue = Number(form.occupiedDistance) || 0;
-    const totalDistanceValue = Number(form.totalDistance) || 0;
-
-    if (!isLegacyForm) {
-      if (handRaisedValue > countValue) {
-        showToast("手上げ乗車回数は通常の回数を超えません");
-        return;
-      }
-      if (appRideValue > countValue) {
-        showToast("アプリ乗車回数は通常の回数を超えません");
-        return;
-      }
-      if (handRaisedValue + appRideValue > countValue) {
-        showToast("手上げ乗車回数とアプリ乗車回数の合計が通常の回数を超えます");
-        return;
-      }
-      if (occupiedValue > totalDistanceValue) {
-        showToast("営業距離は走行距離を超えません");
-        return;
-      }
-    }
-
-    const id = form.id || `${form.date}-${Date.now()}`;
-    const recordFormat = inferRecordFormat(form);
-    // Normalize holidayType for storage
-    let normalizedHolidayType = form.holidayType || null;
-    if (normalizedHolidayType === "red-work" || normalizedHolidayType === "red-off") normalizedHolidayType = "red";
-    const computedDayStatus = form.dayStatus || getEffectiveDayStatus(form.date, form, getHolidayInfo(form.date, entries));
-    const finalDayStatus = typeof form.dayStatus !== "undefined" ? form.dayStatus : computedDayStatus;
-    const record = {
-      ...form,
-      holidayType: normalizedHolidayType,
-      dayStatus: finalDayStatus,
-      holidayFraction: form.holidayFraction ?? inferHolidayFraction(normalizedHolidayType),
-      recordFormat,
-      id,
-      holidayOrigin: finalDayStatus === DAY_STATUS.HOLIDAY && normalizedHolidayType ? form.holidayOrigin || form.date : undefined,
-    };
-    const next = entries.some((e) => e.id === id)
-      ? entries.map((e) => (e.id === id ? record : e))
-      : [...entries.filter((e) => e.date !== form.date), record];
-    setEntries(next);
-    setForm(record);
-    const ok = persistEntries(next);
-    setSaveState(ok ? "saved" : "error");
-    showToast(ok ? "保存しました" : "保存に失敗しました");
-    setTimeout(() => setSaveState("idle"), 1200);
+    clearTimeout(autoSaveTimerRef.current);
+    saveCurrentForm({ source: "manual" });
   };
 
   const handleDelete = (id) => {
+    clearTimeout(autoSaveTimerRef.current);
     const next = entries.filter((e) => e.id !== id);
     setEntries(next);
     persistEntries(next);
     setConfirmDeleteId(null);
-    if (form.id === id) setForm(emptyForm(selectedDate));
+    if (form.id === id) {
+      const cleared = emptyForm(selectedDate);
+      skipNextAutoSaveRef.current = true;
+      lastSavedSnapshotRef.current = getComparableFormData(cleared);
+      setForm(cleared);
+    }
     showToast("削除しました");
   };
 
@@ -1049,7 +1144,7 @@ export default function WorkLog() {
       {/* Date nav */}
       <div className="flex items-center justify-between gap-2 px-5 py-3 border-b border-[#232A36] bg-[#161A21] sticky top-0 z-10 max-w-[560px] mx-auto">
         <button
-          onClick={() => setSelectedDate((s) => addDays(s, -1))}
+          onClick={() => changeDateSafely((s) => addDays(s, -1))}
           className="p-2 -ml-2 text-[#7C8496] active:text-[#FFB454] transition-colors"
           aria-label="前の日"
         >
@@ -1081,12 +1176,12 @@ export default function WorkLog() {
             type="date"
             min={FIRST_WORKDAY}
             value={selectedDate}
-            onChange={(e) => e.target.value && setSelectedDate(e.target.value)}
+            onChange={(e) => e.target.value && changeDateSafely(e.target.value)}
             className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
           />
         </button>
         <button
-          onClick={() => setSelectedDate((s) => addDays(s, 1))}
+          onClick={() => changeDateSafely((s) => addDays(s, 1))}
           className="p-2 -mr-2 text-[#7C8496] active:text-[#FFB454] transition-colors"
           aria-label="次の日"
         >
@@ -1528,6 +1623,17 @@ export default function WorkLog() {
                     </button>
                   )}
                 </div>
+                <div
+                  className={`text-right text-[11px] mt-1 ${
+                    autoSaveStatus === "saving"
+                      ? "text-[#FFB454]"
+                      : autoSaveStatus === "error"
+                        ? "text-[#FF6B57]"
+                        : "text-[#7C8496]"
+                  }`}
+                >
+                  {autoSaveStatus === "saving" ? "保存中…" : autoSaveStatus === "error" ? "保存エラー" : "保存済み"}
+                </div>
               </div>
             </div>
           </>
@@ -1580,6 +1686,17 @@ export default function WorkLog() {
               <Save size={20} />
               {saveState === "saved" ? "保存しました" : saveState === "error" ? "保存に失敗しました" : "この日を保存"}
             </button>
+            <div
+              className={`text-right text-[11px] mt-1 ${
+                autoSaveStatus === "saving"
+                  ? "text-[#FFB454]"
+                  : autoSaveStatus === "error"
+                    ? "text-[#FF6B57]"
+                    : "text-[#7C8496]"
+              }`}
+            >
+              {autoSaveStatus === "saving" ? "保存中…" : autoSaveStatus === "error" ? "保存エラー" : "保存済み"}
+            </div>
           </div>
         )}
 
@@ -1589,7 +1706,7 @@ export default function WorkLog() {
           <div className="rounded-2xl bg-[#181D25] border border-[#232A36] overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3 border-b border-[#232A36]">
               <button
-                onClick={() => setSelectedDate((d) => shiftPeriod(d, -1))}
+                onClick={() => changeDateSafely((d) => shiftPeriod(d, -1))}
                 className="p-1.5 -ml-1.5 text-[#7C8496] active:text-[#6EE7A8] transition-colors"
                 aria-label="前の期間"
               >
@@ -1602,7 +1719,7 @@ export default function WorkLog() {
                 <span className="text-[#7C8496] text-[11px] ml-1.5">締め</span>
               </div>
               <button
-                onClick={() => setSelectedDate((d) => shiftPeriod(d, 1))}
+                onClick={() => changeDateSafely((d) => shiftPeriod(d, 1))}
                 className="p-1.5 -mr-1.5 text-[#7C8496] active:text-[#6EE7A8] transition-colors"
                 aria-label="次の期間"
               >
@@ -1738,7 +1855,7 @@ export default function WorkLog() {
                 return (
                   <div
                     key={entry.id}
-                    onClick={() => setSelectedDate(entry.date)}
+                    onClick={() => changeDateSafely(entry.date)}
                     className={`rounded-xl border px-4 py-3 cursor-pointer transition-colors ${
                       isSelected ? "border-[#FFB454] bg-[#1D2029]" : "border-[#232A36] bg-[#161A21] active:border-[#3A4152]"
                     }`}
