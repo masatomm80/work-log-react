@@ -12,6 +12,9 @@ import {
 } from "lucide-react";
 
 const STORAGE_KEY = "workLogEntries";
+const LAST_BACKUP_KEY = "workLogLastBackupAt";
+const APP_NAME = "Masato Taxi AI";
+const APP_VERSION = "1.0";
 const DUTY_TAGS = [
   "日赤",
   "日赤夜①",
@@ -578,6 +581,51 @@ function downloadBlob(content, mime, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+// バックアップJSONのラッパー構造を作る。entries自体の中身・構造は変更しない。
+function buildBackupPayload(entriesToBackup, createdAtIso) {
+  const list = Array.isArray(entriesToBackup) ? entriesToBackup : [];
+  return {
+    app: APP_NAME,
+    version: APP_VERSION,
+    createdAt: createdAtIso,
+    recordCount: list.length,
+    legacyCount: list.filter(isLegacyRecord).length,
+    currentCount: list.filter(isCurrentRecord).length,
+    entries: list,
+  };
+}
+// 復元対象のJSONを、旧形式(素の配列)・新形式({app, version, ..., entries})のどちらでも読めるようにする。
+function parseBackupFile(raw) {
+  const parsed = JSON.parse(raw);
+  if (Array.isArray(parsed)) {
+    return { entries: parsed, app: null, version: null };
+  }
+  if (parsed && Array.isArray(parsed.entries)) {
+    return { entries: parsed.entries, app: parsed.app ?? null, version: parsed.version ?? null };
+  }
+  return null;
+}
+function formatBackupTimestamp(isoString) {
+  if (!isoString) return "未作成";
+  const dt = new Date(isoString);
+  if (isNaN(dt.getTime())) return "未作成";
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth() + 1).padStart(2, "0");
+  const d = String(dt.getDate()).padStart(2, "0");
+  const hh = String(dt.getHours()).padStart(2, "0");
+  const mm = String(dt.getMinutes()).padStart(2, "0");
+  return `${y}/${m}/${d} ${hh}:${mm}`;
+}
+function formatBackupFileTimestamp(isoString) {
+  const dt = new Date(isoString);
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth() + 1).padStart(2, "0");
+  const d = String(dt.getDate()).padStart(2, "0");
+  const hh = String(dt.getHours()).padStart(2, "0");
+  const mm = String(dt.getMinutes()).padStart(2, "0");
+  return `${y}-${m}-${d}_${hh}${mm}`;
+}
+
 function csvEscape(v) {
   const s = v === null || v === undefined ? "" : String(v);
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -594,6 +642,9 @@ export default function WorkLog() {
   const [holidayMoveTarget, setHolidayMoveTarget] = useState("");
   const [dutyStampOpen, setDutyStampOpen] = useState(false);
   const [holidayOptionsOpen, setHolidayOptionsOpen] = useState(false);
+  const [lastBackupAt, setLastBackupAt] = useState(() => localStorage.getItem(LAST_BACKUP_KEY));
+  const [pendingRestore, setPendingRestore] = useState(null); // { entries, validCount, appMismatch, versionMismatch, sourceApp, sourceVersion }
+  const [restoreBusy, setRestoreBusy] = useState(false);
   const dateInputRef = useRef(null);
   const restoreInputRef = useRef(null);
   const toastTimer = useRef(null);
@@ -996,9 +1047,25 @@ export default function WorkLog() {
     showToast("CSVを書き出しました");
   };
 
+  // 手動バックアップ・復元前の自動バックアップの両方で使う共通処理。
+  const performBackup = (entriesToBackup, filename) => {
+    try {
+      const createdAtIso = new Date().toISOString();
+      const payload = buildBackupPayload(entriesToBackup, createdAtIso);
+      downloadBlob(JSON.stringify(payload, null, 2), "application/json", filename);
+      localStorage.setItem(LAST_BACKUP_KEY, createdAtIso);
+      setLastBackupAt(createdAtIso);
+      return { ok: true, createdAtIso };
+    } catch (e) {
+      console.error("バックアップ失敗", e);
+      return { ok: false };
+    }
+  };
+
   const handleBackup = () => {
-    downloadBlob(JSON.stringify(entries, null, 2), "application/json", `work-log-backup_${todayISO()}.json`);
-    showToast("バックアップを書き出しました");
+    const filename = `${APP_NAME.replace(/\s+/g, "")}_Backup_${formatBackupFileTimestamp(new Date().toISOString())}.json`;
+    const result = performBackup(entries, filename);
+    showToast(result.ok ? "バックアップを書き出しました" : "バックアップ失敗：書き出しに失敗しました");
   };
 
   const handleRestoreFile = (e) => {
@@ -1006,43 +1073,74 @@ export default function WorkLog() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
-      let imported;
+      let parsedResult;
       try {
-        imported = JSON.parse(reader.result);
+        parsedResult = parseBackupFile(reader.result);
       } catch {
-        showToast("ファイルの読み込みに失敗しました");
+        showToast("JSON形式が不正：ファイルを読み込めませんでした");
         return;
       }
-      if (!Array.isArray(imported)) {
-        showToast("バックアップ形式が正しくありません");
+      if (!parsedResult) {
+        showToast("JSON形式が不正：バックアップの形式が正しくありません");
         return;
       }
-      imported = imported.map((r) => {
+      const { entries: rawImported, app: sourceApp, version: sourceVersion } = parsedResult;
+      // app名が異なる場合は復元不可(他アプリのデータの可能性が高いため)。
+      if (sourceApp && sourceApp !== APP_NAME) {
+        showToast(`このバックアップは「${sourceApp}」のデータのため復元できません`);
+        return;
+      }
+      const imported = rawImported.map((r) => {
         if (!r || !r.date) return r;
         const normalized = ensureRecordFormat(r);
         if (!normalized.id) normalized.id = `${normalized.date}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
         return normalized;
       });
       const validCount = imported.filter((r) => r && r.date).length;
-      const proceed = window.confirm(
-        `${validCount}件のデータを読み込みます。同じ日付の既存データは上書きされます。よろしいですか？`
-      );
-      if (!proceed) return;
-
-      const byDate = {};
-      entries.forEach((en) => (byDate[en.date] = en));
-      imported.forEach((r) => {
-        if (r && r.date) {
-          byDate[r.date] = r;
-        }
-      });
-      const merged = Object.values(byDate).map(ensureRecordFormat);
-      setEntries(merged);
-      persistEntries(merged);
-      showToast("復元しました");
+      // versionだけ異なる場合は復元を止めず、警告付きの確認ダイアログを出す。
+      const versionMismatch = Boolean(sourceVersion) && sourceVersion !== APP_VERSION;
+      setPendingRestore({ entries: imported, validCount, versionMismatch, sourceVersion });
+    };
+    reader.onerror = () => {
+      showToast("JSON形式が不正：ファイルを読み込めませんでした");
     };
     reader.readAsText(file);
     e.target.value = "";
+  };
+
+  const cancelRestore = () => {
+    if (restoreBusy) return;
+    setPendingRestore(null);
+  };
+
+  const confirmRestore = () => {
+    if (!pendingRestore || restoreBusy) return;
+    setRestoreBusy(true);
+    const filename = `${APP_NAME.replace(/\s+/g, "")}_AutoBackup_${formatBackupFileTimestamp(new Date().toISOString())}.json`;
+    const backupResult = performBackup(entries, filename);
+    if (!backupResult.ok) {
+      setRestoreBusy(false);
+      showToast("バックアップ失敗：復元前の自動バックアップに失敗したため、復元を中止しました");
+      return;
+    }
+    try {
+      const byDate = {};
+      entries.forEach((en) => (byDate[en.date] = en));
+      pendingRestore.entries.forEach((r) => {
+        if (r && r.date) byDate[r.date] = r;
+      });
+      const merged = Object.values(byDate).map(ensureRecordFormat);
+      setEntries(merged);
+      const ok = persistEntries(merged);
+      setPendingRestore(null);
+      setRestoreBusy(false);
+      showToast(ok ? "復元しました" : "復元失敗：保存に失敗しました");
+    } catch (err) {
+      console.error("復元失敗", err);
+      setPendingRestore(null);
+      setRestoreBusy(false);
+      showToast("復元失敗：データの反映に失敗しました");
+    }
   };
 
   const { m, d, wd } = fmtDateLabel(selectedDate);
@@ -1922,6 +2020,10 @@ export default function WorkLog() {
         <div className="mx-5 mt-8">
           <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter mb-2">データ管理</div>
           <div className="rounded-2xl bg-[#181D25] border border-[#232A36] p-4 space-y-3">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-[12px] text-[#7C8496]">最終バックアップ</span>
+              <span className="text-[12px] text-[#EDEFF3] font-meter">{formatBackupTimestamp(lastBackupAt)}</span>
+            </div>
             <button
               onClick={handleExportCsv}
               className="w-full flex items-center justify-center gap-2 bg-[#161A21] border border-[#2A3140] text-[#EDEFF3] text-[15px] py-4 rounded-xl active:border-[#FFB454] transition-colors"
@@ -1980,6 +2082,62 @@ export default function WorkLog() {
                 className="flex-1 py-3 rounded-lg bg-[#FF6B57] text-[#12151A] font-medium"
               >
                 削除する
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Restore confirm */}
+      {pendingRestore && (
+        <div
+          className="fixed inset-0 bg-black/60 flex items-end justify-center z-20"
+          onClick={cancelRestore}
+        >
+          <div
+            className="bg-[#1B2029] border border-[#2A3140] rounded-t-2xl w-full max-w-[560px] p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <span className="font-display font-bold text-[15px]">
+                {pendingRestore.versionMismatch ? "バックアップのバージョンが異なります" : "データを復元しますか？"}
+              </span>
+              <button onClick={cancelRestore} className="text-[#7C8496]">
+                <X size={18} />
+              </button>
+            </div>
+            {pendingRestore.versionMismatch ? (
+              <p className="text-[13px] text-[#7C8496] mb-4 leading-relaxed">
+                このバックアップは Ver {pendingRestore.sourceVersion}、現在のアプリは Ver {APP_VERSION} です。
+                互換性は確認できません。
+                <br />
+                現在のデータは上書きされます。復元前に現在のデータを自動バックアップします。
+                <br />
+                このまま復元しますか？
+              </p>
+            ) : (
+              <p className="text-[13px] text-[#7C8496] mb-4 leading-relaxed">
+                現在のデータは上書きされます。
+                <br />
+                復元前に現在のデータを自動バックアップします。
+                <br />
+                復元を実行しますか？（{pendingRestore.validCount}件）
+              </p>
+            )}
+            <div className="flex gap-2">
+              <button
+                onClick={cancelRestore}
+                disabled={restoreBusy}
+                className="flex-1 py-3 rounded-lg border border-[#2A3140] text-[#EDEFF3] disabled:opacity-50"
+              >
+                キャンセル
+              </button>
+              <button
+                onClick={confirmRestore}
+                disabled={restoreBusy}
+                className="flex-1 py-3 rounded-lg bg-[#FFB454] text-[#12151A] font-medium disabled:opacity-50"
+              >
+                {restoreBusy ? "復元中…" : "復元する"}
               </button>
             </div>
           </div>
