@@ -1228,7 +1228,7 @@ export default function WorkLog() {
             ) : null}
           </div>
         </div>
-        {(showNormalEntryForm || isLegacyMode) ? (
+        {showNormalEntryForm ? (
           <>
             {!isLegacyMode ? (
             <div className="mx-5 mt-3 rounded-2xl border border-[#232A36] bg-[#171C24] overflow-hidden">
