@@ -1454,14 +1454,6 @@ export default function WorkLog() {
                   <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter">営業効率</div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="rounded-xl border border-[#232A36] bg-[#171C24] px-3 py-3">
-                      <div className="text-[10px] text-[#7C8496]">走行距離</div>
-                      <div className="font-meter text-sm text-[#EDEFF3] mt-0.5">{formatDistanceValue(form.totalDistance)}</div>
-                    </div>
-                    <div className="rounded-xl border border-[#232A36] bg-[#171C24] px-3 py-3">
-                      <div className="text-[10px] text-[#7C8496]">営業距離</div>
-                      <div className="font-meter text-sm text-[#EDEFF3] mt-0.5">{formatDistanceValue(form.occupiedDistance)}</div>
-                    </div>
-                    <div className="rounded-xl border border-[#232A36] bg-[#171C24] px-3 py-3">
                       <div className="text-[10px] text-[#7C8496]">乗車率</div>
                       <div className="font-meter text-sm text-[#EDEFF3] mt-0.5">{occupancyRateDisplay}</div>
                     </div>
@@ -1636,24 +1628,7 @@ export default function WorkLog() {
                 <div className="font-meter text-base font-medium mt-0.5">{periodTotals.days}日</div>
               </div>
             </div>
-            <div className="border-t border-[#232A36] px-4 py-3">
-              <div className="text-[10px] tracking-[0.2em] text-[#7C8496] font-meter">月間売上</div>
-              <div className="font-meter text-sm font-medium text-[#EDEFF3] mt-1">{monthlyPeriodLabel}</div>
-              <div className="mt-2 grid grid-cols-3 gap-2">
-                <div className="rounded-xl bg-[#181D25] px-3 py-2">
-                  <div className="text-[10px] text-[#7C8496]">合計</div>
-                  <div className="font-meter text-sm text-[#EDEFF3] mt-0.5">¥{yen(monthlySalesTotal)}</div>
-                </div>
-                <div className="rounded-xl bg-[#181D25] px-3 py-2">
-                  <div className="text-[10px] text-[#7C8496]">ノルマ</div>
-                  <div className="font-meter text-sm text-[#EDEFF3] mt-0.5">¥{yen(monthlyTarget)}</div>
-                </div>
-                <div className="rounded-xl bg-[#181D25] px-3 py-2">
-                  <div className="text-[10px] text-[#7C8496]">残額</div>
-                  <div className="font-meter text-sm text-[#EDEFF3] mt-0.5">¥{yen(monthlyRemaining)}</div>
-                </div>
-              </div>
-            </div>
+            {/* Monthly sales summary removed to avoid duplication with top-of-screen display */}
             {periodTotals.hours > 0 && (
               <div className="px-4 py-2.5 border-t border-[#232A36] text-[12px] text-[#7C8496] font-meter">
                 合計勤務時間 {(Math.round(periodTotals.hours * 10) / 10).toFixed(1)}h
