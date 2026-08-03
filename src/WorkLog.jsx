@@ -631,6 +631,11 @@ function formatBackupFileTimestamp(isoString) {
   return `${y}-${m}-${d}_${hh}${mm}`;
 }
 
+// ファイル名に使えない文字(空白含む)を安全な文字へ置き換える。
+function sanitizeFilenamePart(name) {
+  return String(name).replace(/[\s<>:"/\\|?*\x00-\x1f]+/g, "_");
+}
+
 function csvEscape(v) {
   const s = v === null || v === undefined ? "" : String(v);
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -655,6 +660,9 @@ export default function WorkLog() {
   const [expandedJumpYear, setExpandedJumpYear] = useState(null); // 初期状態はすべて閉じる
   // MONTHLY LOGで「選択→再タップでジャンプ」するための、1回目タップで選ばれている日付。
   const [selectedLogDate, setSelectedLogDate] = useState(null);
+  // CSV書き出しの対象期間。初期値は現在開いている月度(既存のgetPeriodRangeを利用)。
+  const [csvStartDate, setCsvStartDate] = useState(() => getPeriodRange(selectedDate).start);
+  const [csvEndDate, setCsvEndDate] = useState(() => getPeriodRange(selectedDate).end);
   const dateInputRef = useRef(null);
   const restoreInputRef = useRef(null);
   const toastTimer = useRef(null);
@@ -662,6 +670,8 @@ export default function WorkLog() {
   const autoSaveTimerRef = useRef(null);
   const lastSavedSnapshotRef = useRef(null);
   const skipNextAutoSaveRef = useRef(true);
+  // CSV期間欄を最後に自動セットした月度(start_end)。同じ月度内ではユーザーの手動編集を上書きしない。
+  const csvRangeSyncRef = useRef(`${getPeriodRange(selectedDate).start}_${getPeriodRange(selectedDate).end}`);
 
   const currentEntries = useMemo(() => entries.filter(isCurrentRecord), [entries]);
   const legacyEntries = useMemo(() => entries.filter(isLegacyRecord), [entries]);
@@ -694,6 +704,16 @@ export default function WorkLog() {
   }, [selectedDate]);
 
   const monthlyLogRange = useMemo(() => getPeriodRange(selectedDate), [selectedDate]);
+  // selectedDateの月度が変わった場合だけ、CSV期間欄を新しい月度に合わせる。
+  // 同じ月度内の日付移動では、ユーザーが手動で変更したCSV期間をそのまま維持する。
+  useEffect(() => {
+    const key = `${monthlyLogRange.start}_${monthlyLogRange.end}`;
+    if (csvRangeSyncRef.current !== key) {
+      csvRangeSyncRef.current = key;
+      setCsvStartDate(monthlyLogRange.start);
+      setCsvEndDate(monthlyLogRange.end);
+    }
+  }, [monthlyLogRange]);
   // MONTHLY JUMPの年度一覧。2024年度から「現在年 or 選択中の年」の遅い方+1年先まで、新しい年度が上にくる降順。
   const jumpYearOptions = useMemo(() => {
     const startYear = 2024;
@@ -1043,11 +1063,50 @@ export default function WorkLog() {
     showToast("削除しました");
   };
 
+  // CSV期間プリセット。ボタンを押すとcsvStartDate/csvEndDateへ反映するだけ(書き出しは実行しない)。
+  const applyCsvPresetCurrentPeriod = () => {
+    setCsvStartDate(monthlyLogRange.start);
+    setCsvEndDate(monthlyLogRange.end);
+  };
+  const applyCsvPresetThisYear = () => {
+    const year = todayISO().slice(0, 4);
+    setCsvStartDate(`${year}-01-01`);
+    setCsvEndDate(`${year}-12-31`);
+  };
+  const applyCsvPresetAllTime = () => {
+    if (entries.length === 0) {
+      showToast("保存されているデータがありません");
+      return;
+    }
+    const dates = entries.map((e) => e.date).filter(Boolean).sort();
+    setCsvStartDate(dates[0]);
+    setCsvEndDate(dates[dates.length - 1]);
+  };
+
   const handleExportCsv = () => {
+    if (!csvStartDate || !csvEndDate) {
+      showToast("開始日と終了日を指定してください");
+      return;
+    }
+    if (csvStartDate > csvEndDate) {
+      showToast("開始日は終了日以前にしてください");
+      return;
+    }
+    // 未保存の入力があれば先にflushし、保存成功(または変更なし)の場合だけ書き出す。
+    const flushResult = flushPendingSave();
+    if (flushResult.ok === false) {
+      showToast("保存エラー：未保存の内容を保存できなかったため、CSVを書き出せませんでした");
+      return;
+    }
+    const targetEntries = flushResult.entries.filter((e) => e && e.date >= csvStartDate && e.date <= csvEndDate);
+    if (targetEntries.length === 0) {
+      showToast("指定期間のデータがありません");
+      return;
+    }
     const rows = [
       ["日付", "曜日", "売上", "追加売上", "チップ", "回数", "勤務開始", "勤務終了", "休憩時間", "勤務時間", "備考"].join(","),
     ];
-    [...entries]
+    [...targetEntries]
       .sort((a, b) => (a.date < b.date ? -1 : 1))
       .forEach((e) => {
         const lbl = fmtDateLabel(e.date);
@@ -1068,7 +1127,8 @@ export default function WorkLog() {
         );
       });
     const csv = "\uFEFF" + rows.join("\r\n");
-    downloadBlob(csv, "text/csv;charset=utf-8", `M's Taxi AI_${todayISO()}.csv`);
+    const filename = `${sanitizeFilenamePart("M's Taxi AI")}_${csvStartDate}_${csvEndDate}.csv`;
+    downloadBlob(csv, "text/csv;charset=utf-8", filename);
     showToast("CSVを書き出しました");
   };
 
@@ -2099,6 +2159,52 @@ export default function WorkLog() {
             <div className="flex items-center justify-between px-1">
               <span className="text-[12px] text-[#7C8496]">最終バックアップ</span>
               <span className="text-[12px] text-[#EDEFF3] font-meter">{formatBackupTimestamp(lastBackupAt)}</span>
+            </div>
+            <div className="rounded-xl border border-[#232A36] bg-[#171C24] p-3 space-y-2">
+              <div className="text-[11px] text-[#7C8496]">CSV書き出し期間</div>
+              <div className="flex gap-1.5">
+                <button
+                  type="button"
+                  onClick={applyCsvPresetCurrentPeriod}
+                  className="flex-1 rounded-lg border border-[#2A3140] text-[#8B93A1] text-[11px] py-1.5 active:border-[#FFB454] transition-colors"
+                >
+                  現在の月度
+                </button>
+                <button
+                  type="button"
+                  onClick={applyCsvPresetThisYear}
+                  className="flex-1 rounded-lg border border-[#2A3140] text-[#8B93A1] text-[11px] py-1.5 active:border-[#FFB454] transition-colors"
+                >
+                  今年
+                </button>
+                <button
+                  type="button"
+                  onClick={applyCsvPresetAllTime}
+                  className="flex-1 rounded-lg border border-[#2A3140] text-[#8B93A1] text-[11px] py-1.5 active:border-[#FFB454] transition-colors"
+                >
+                  全期間
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] text-[#7C8496]">開始日</label>
+                  <input
+                    type="date"
+                    value={csvStartDate}
+                    onChange={(e) => setCsvStartDate(e.target.value)}
+                    className="w-full mt-1 bg-[#181D25] border border-[#232A36] rounded-lg px-2 py-2 text-[13px] font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFB454]"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-[#7C8496]">終了日</label>
+                  <input
+                    type="date"
+                    value={csvEndDate}
+                    onChange={(e) => setCsvEndDate(e.target.value)}
+                    className="w-full mt-1 bg-[#181D25] border border-[#232A36] rounded-lg px-2 py-2 text-[13px] font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFB454]"
+                  />
+                </div>
+              </div>
             </div>
             <button
               onClick={handleExportCsv}
