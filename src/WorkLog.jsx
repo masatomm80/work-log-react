@@ -704,6 +704,15 @@ export default function WorkLog() {
     setSelectedLogDate(null);
   }, [selectedDate]);
 
+  // 日付が切り替わったら(MONTHLY LOGからのジャンプを含むすべての日付変更で)、詳細画面を最上部から表示する。
+  // 描画直後に実行するため、コミット後の最初のフレームでrequestAnimationFrameを使う。
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [selectedDate]);
+
   const monthlyLogRange = useMemo(() => getPeriodRange(selectedDate), [selectedDate]);
   // selectedDateの月度が変わった場合だけ、CSV期間欄を新しい月度に合わせる。
   // 同じ月度内の日付移動では、ユーザーが手動で変更したCSV期間をそのまま維持する。
