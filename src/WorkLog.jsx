@@ -1767,10 +1767,20 @@ export default function WorkLog() {
                 {!isLegacyMode ? (
                   <div className="grid grid-cols-2 gap-4">
                     <Field label="休憩時間">
-                      <TimeSelect value={form.breakTime} onChange={(v) => updateField("breakTime", v)} options={BREAK_TIME_OPTIONS} />
+                      <TimeSelect
+                        value={form.breakTime}
+                        onChange={(v) => updateField("breakTime", v)}
+                        options={BREAK_TIME_OPTIONS}
+                        className="w-full bg-[#181D25] border border-[#232A36] rounded-lg px-3 py-2.5 text-base font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFB454] disabled:opacity-60"
+                      />
                     </Field>
                     <Field label="勤務終了">
-                      <TimeSelect value={form.workEnd} onChange={(v) => updateField("workEnd", v)} options={WORK_TIME_OPTIONS} />
+                      <TimeSelect
+                        value={form.workEnd}
+                        onChange={(v) => updateField("workEnd", v)}
+                        options={WORK_TIME_OPTIONS}
+                        className="w-full bg-[#181D25] border border-[#232A36] rounded-lg px-3 py-2.5 text-base font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFB454] disabled:opacity-60"
+                      />
                     </Field>
                   </div>
                 ) : null}
@@ -1801,18 +1811,18 @@ export default function WorkLog() {
                 <div className="flex gap-2 pt-1">
                   <button
                     onClick={handleSave}
-                    className="flex-1 flex items-center justify-center gap-2 bg-[#FFB454] text-[#12151A] font-medium text-lg py-5 rounded-xl active:bg-[#FFC578] transition-colors"
+                    className="flex-1 flex items-center justify-center gap-1.5 bg-[#FFB454] text-[#12151A] font-medium text-[14px] py-3 rounded-lg active:bg-[#FFC578] transition-colors"
                   >
-                    <Save size={20} />
+                    <Save size={16} />
                     {saveState === "saved" ? "保存しました" : saveState === "error" ? "保存に失敗しました" : "この日を保存"}
                   </button>
                   {form.id && (
                     <button
                       onClick={() => setConfirmDeleteId(form.id)}
-                      className="px-6 rounded-xl border border-[#2A3140] text-[#7C8496] active:border-[#FF6B57] active:text-[#FF6B57] transition-colors"
+                      className="px-4 rounded-lg border border-[#2A3140] text-[#7C8496] active:border-[#FF6B57] active:text-[#FF6B57] transition-colors"
                       aria-label="削除"
                     >
-                      <Trash2 size={22} />
+                      <Trash2 size={18} />
                     </button>
                   )}
                 </div>
@@ -1874,9 +1884,9 @@ export default function WorkLog() {
             </div>
             <button
               onClick={handleSave}
-              className="w-full flex items-center justify-center gap-2 bg-[#FFB454] text-[#12151A] font-medium text-lg py-5 rounded-xl active:bg-[#FFC578] transition-colors"
+              className="w-full flex items-center justify-center gap-1.5 bg-[#FFB454] text-[#12151A] font-medium text-[14px] py-3 rounded-lg active:bg-[#FFC578] transition-colors"
             >
-              <Save size={20} />
+              <Save size={16} />
               {saveState === "saved" ? "保存しました" : saveState === "error" ? "保存に失敗しました" : "この日を保存"}
             </button>
             <div
@@ -2363,13 +2373,16 @@ function NumberInput({ value, onChange, min = 0, step = "any", placeholder = "0"
   );
 }
 
-function TimeSelect({ value, onChange, options, disabled = false }) {
+function TimeSelect({ value, onChange, options, disabled = false, className }) {
   return (
     <select
       value={value || ""}
       onChange={(e) => onChange(e.target.value)}
       disabled={disabled}
-      className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-5 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFB454] disabled:opacity-60"
+      className={
+        className ||
+        "w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-5 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFB454] disabled:opacity-60"
+      }
     >
       <option value="">--:--</option>
       {options.map((opt) => (
