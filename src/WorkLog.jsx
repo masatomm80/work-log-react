@@ -1328,7 +1328,12 @@ export default function WorkLog() {
     <div className="min-h-screen bg-[#12151A] font-body text-[#EDEFF3] pb-16">
       {/* Header */}
       <header className="px-5 pt-7 pb-4 border-b border-[#232A36] max-w-[560px] mx-auto">
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <img
+            src="/icons/logo-mascot-app-bg.png"
+            alt=""
+            className="w-20 h-20 sm:w-24 sm:h-24 flex-shrink-0 object-contain shadow-[0_2px_10px_rgba(0,0,0,0.45)]"
+          />
           <div className="min-w-0">
             <div className="text-[11px] tracking-[0.25em] text-[#F5C542] font-meter font-medium">DAILY LOG</div>
             <h1 className="font-display text-2xl mt-1" style={{ fontWeight: 900 }}>
@@ -1336,11 +1341,6 @@ export default function WorkLog() {
             </h1>
             <p className="text-[13px] text-[#7C8496] mt-0.5">記録が戦略に。</p>
           </div>
-          <img
-            src="/icons/logo-mascot-transparent.png"
-            alt=""
-            className="w-16 h-16 sm:w-20 sm:h-20 flex-shrink-0 object-contain shadow-[0_2px_10px_rgba(0,0,0,0.45)]"
-          />
         </div>
       </header>
 
