@@ -652,7 +652,7 @@ export default function WorkLog() {
   const [restoreBusy, setRestoreBusy] = useState(false);
   // MONTHLY JUMPで開いている年度(1つだけ)。初期値は現在開いている月度の年。
   // 一度ユーザーが閉じたら、selectedDateが変わっても自動では開き直さない。
-  const [expandedJumpYear, setExpandedJumpYear] = useState(() => Number(getPeriodBounds(selectedDate).end.slice(0, 4)));
+  const [expandedJumpYear, setExpandedJumpYear] = useState(null); // 初期状態はすべて閉じる
   // MONTHLY LOGで「選択→再タップでジャンプ」するための、1回目タップで選ばれている日付。
   const [selectedLogDate, setSelectedLogDate] = useState(null);
   const dateInputRef = useRef(null);
@@ -694,10 +694,10 @@ export default function WorkLog() {
   }, [selectedDate]);
 
   const monthlyLogRange = useMemo(() => getPeriodRange(selectedDate), [selectedDate]);
-  // MONTHLY JUMPの年度一覧。2024年度から「現在年 or 選択中の年」の遅い方まで、新しい年度が上にくる降順。
+  // MONTHLY JUMPの年度一覧。2024年度から「現在年 or 選択中の年」の遅い方+1年先まで、新しい年度が上にくる降順。
   const jumpYearOptions = useMemo(() => {
     const startYear = 2024;
-    const endYear = Math.max(Number(todayISO().slice(0, 4)), Number(selectedDate.slice(0, 4)));
+    const endYear = Math.max(Number(todayISO().slice(0, 4)), Number(selectedDate.slice(0, 4))) + 1;
     const years = [];
     for (let y = endYear; y >= startYear; y--) years.push(y);
     return years;
