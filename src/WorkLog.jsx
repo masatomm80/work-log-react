@@ -45,6 +45,14 @@ const DAY_STATUS = {
   DAYOFF: "dayoff",
   HOLIDAY: "holiday",
 };
+// MONTHLY LOGの「勤務区分」表示用の短縮ラベル(表示専用、データ・集計ロジックには影響しない)。
+const HOLIDAY_SHORT_LABEL = {
+  black: "黒字",
+  red: "赤字",
+  "black-half": "黒字半日",
+  "red-half": "赤字半日",
+  paid: "有給",
+};
 const WORK_TIME_OPTIONS = Array.from({ length: 24 * 2 }, (_, i) => {
   const mins = i * 30;
   const h = String(Math.floor(mins / 60)).padStart(2, "0");
@@ -196,13 +204,6 @@ function hasMonthlyLogContents(entry) {
     return true;
   }
   return false;
-}
-function getNoteSummary(notes, maxLength = 40) {
-  if (!notes) return "";
-  const normalized = String(notes).replace(/\s+/g, " ").trim();
-  if (!normalized) return "";
-  if (normalized.length <= maxLength) return normalized;
-  return `${normalized.slice(0, maxLength).trimEnd()}…`;
 }
 function getRecordFormatFromDate(date) {
   if (!date) return "current";
@@ -2011,12 +2012,12 @@ export default function WorkLog() {
               月度の履歴がありません。
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {monthlyLogEntries.map((entry) => {
                 const label = fmtDateLabel(entry.date);
                 const type = entry.monthlyLogType;
                 const isSelected = entry.date === selectedLogDate;
-                const badgeClasses =
+                const statusClasses =
                   type === "holiday"
                     ? entry.holidayInfo?.type === "red"
                       ? "bg-[#FF6B57]/10 text-[#FF6B57]"
@@ -2024,17 +2025,13 @@ export default function WorkLog() {
                     : type === "worked"
                       ? "bg-[#6EE7A8]/10 text-[#6EE7A8]"
                       : "bg-[#FFB454]/10 text-[#FFB454]";
-                const badgeLabel =
-                  type === "holiday"
-                    ? getHolidayLabel(entry, entry.holidayInfo)
-                    : type === "worked"
-                      ? "勤務済み"
-                      : "勤務前";
+                const statusLabel = type === "worked" ? "勤務済み" : type === "holiday" ? "公休日" : "勤務前";
                 const dutyTags = Array.isArray(entry.dutyTags) ? entry.dutyTags : [];
-                const totalSales = Number(entry.sales) || 0;
-                const totalSalesExtra = Number(entry.salesExtra) || 0;
-                const noteSummary = getNoteSummary(entry.notes, 40);
-                const showTopSummary = noteSummary && type !== "worked";
+                const holidayShortLabel = HOLIDAY_SHORT_LABEL[entry.holidayType] || "";
+                const categoryParts = [holidayShortLabel, ...dutyTags].filter(Boolean);
+                const categoryLabel = categoryParts.length > 0 ? categoryParts.join("・") : "—";
+                const salesTotal = (Number(entry.sales) || 0) + (Number(entry.salesExtra) || 0);
+                const salesDisplay = type === "worked" ? `¥${yen(salesTotal)}` : "—";
                 return (
                   <div
                     key={entry.id}
@@ -2046,61 +2043,33 @@ export default function WorkLog() {
                         setSelectedLogDate(entry.date);
                       }
                     }}
-                    className={`rounded-xl border px-4 py-3 cursor-pointer transition-colors ${
+                    className={`rounded-xl border px-3 py-2 cursor-pointer transition-colors ${
                       isSelected ? "border-[#FFB454] bg-[#1D2029]" : "border-[#232A36] bg-[#161A21] active:border-[#3A4152]"
                     }`}
                   >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-baseline gap-2 font-meter flex-shrink-0">
-                        <span className="font-bold">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-baseline gap-1.5 font-meter flex-shrink-0">
+                        <span className="font-bold text-[14px]">
                           {label.m}/{label.d}
                         </span>
-                        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${getWeekdayBadgeClass(label.wd)}`}>
+                        <span className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${getWeekdayBadgeClass(label.wd)}`}>
                           {label.wd}
                         </span>
                       </div>
-                      <div className="flex flex-wrap items-center gap-2 min-w-0 justify-end">
-                        {showTopSummary ? (
-                          <span className="truncate text-[13px] text-[#EDEFF3] max-w-[280px]">{noteSummary}</span>
-                        ) : null}
-                        <span className={`rounded-full px-2 py-1 text-[11px] font-medium ${badgeClasses}`}>{badgeLabel}</span>
-                      </div>
+                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap flex-shrink-0 ${statusClasses}`}>
+                        {statusLabel}
+                      </span>
                     </div>
-                    {type === "holiday" ? null : (
-                      <div className="mt-3 space-y-2 text-[#EDEFF3] text-sm">
-                        {dutyTags.length > 0 ? (
-                          <div className="flex flex-wrap gap-2">
-                            {dutyTags.map((tag) => (
-                              <span key={tag} className="rounded-full border border-[#2A3140] bg-[#171C24] px-2 py-1 text-[12px] text-[#EDEFF3]">
-                                {tag}
-                              </span>
-                            ))}
-                          </div>
-                        ) : null}
-                        {type === "worked" ? (
-                          <div className="flex flex-wrap gap-3 text-[#EDEFF3]">
-                            <div className="rounded-2xl bg-[#171C24] px-3 py-2 min-w-[120px]">
-                              <div className="text-[10px] text-[#7C8496]">売上</div>
-                              <div className="mt-1 text-lg font-semibold leading-none">¥{yen(totalSales + totalSalesExtra)}</div>
-                            </div>
-                            {noteSummary ? (
-                              <div className="rounded-2xl bg-[#171C24] px-3 py-2 min-w-[140px] flex-1">
-                                <div className="text-[10px] text-[#7C8496]">コメント</div>
-                                <div className="mt-1 text-sm text-[#EDEFF3] truncate">{noteSummary}</div>
-                              </div>
-                            ) : null}
-                            {entry.workHours ? (
-                              <div className="rounded-2xl bg-[#171C24] px-3 py-2 min-w-[80px]">
-                                <div className="text-[10px] text-[#7C8496]">勤務時間</div>
-                                <div className="mt-1 font-medium">{entry.workHours}h</div>
-                              </div>
-                            ) : null}
-                          </div>
-                        ) : (
-                          dutyTags.length > 0 ? null : null
-                        )}
-                      </div>
-                    )}
+                    <div className="mt-1 flex items-start justify-between gap-2">
+                      <span className="text-[12px] text-[#8B93A1] flex-1 min-w-0 break-words">{categoryLabel}</span>
+                      <span
+                        className={`font-meter text-[15px] font-bold whitespace-nowrap flex-shrink-0 ${
+                          type === "worked" ? "text-[#EDEFF3]" : "text-[#5B6472]"
+                        }`}
+                      >
+                        {salesDisplay}
+                      </span>
+                    </div>
                   </div>
                 );
               })}
