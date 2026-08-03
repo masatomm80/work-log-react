@@ -1335,7 +1335,7 @@ export default function WorkLog() {
             className="w-20 h-20 sm:w-24 sm:h-24 flex-shrink-0 object-contain shadow-[0_2px_10px_rgba(0,0,0,0.45)]"
           />
           <div className="min-w-0">
-            <div className="text-[11px] tracking-[0.25em] text-[#F5C542] font-meter font-medium">DAILY LOG</div>
+            <div className="text-[11px] tracking-[0.25em] text-[#FFD54A] font-meter font-medium">DAILY LOG</div>
             <h1 className="font-display text-2xl mt-1" style={{ fontWeight: 900 }}>
               masato taxi ai
             </h1>
@@ -1348,7 +1348,7 @@ export default function WorkLog() {
       <div className="flex items-center justify-between gap-2 px-5 py-3 border-b border-[#232A36] bg-[#161A21] sticky top-0 z-10 max-w-[560px] mx-auto">
         <button
           onClick={() => changeDateSafely((s) => addDays(s, -1))}
-          className="p-2 -ml-2 text-[#7C8496] active:text-[#F5C542] transition-colors"
+          className="p-2 -ml-2 text-[#7C8496] active:text-[#FFD54A] transition-colors"
           aria-label="前の日"
         >
           <ChevronLeft size={20} />
@@ -1356,7 +1356,7 @@ export default function WorkLog() {
         {!isTodaySelected ? (
           <button
             onClick={handleGoToToday}
-            className="rounded-full border border-[#2A3140] px-3 py-1.5 text-[11px] text-[#C0C8D4] active:border-[#F5C542] active:text-[#F5C542]"
+            className="rounded-full border border-[#2A3140] px-3 py-1.5 text-[11px] text-[#C0C8D4] active:border-[#FFD54A] active:text-[#FFD54A]"
           >
             今日へ戻る
           </button>
@@ -1385,7 +1385,7 @@ export default function WorkLog() {
         </button>
         <button
           onClick={() => changeDateSafely((s) => addDays(s, 1))}
-          className="p-2 -mr-2 text-[#7C8496] active:text-[#F5C542] transition-colors"
+          className="p-2 -mr-2 text-[#7C8496] active:text-[#FFD54A] transition-colors"
           aria-label="次の日"
         >
           <ChevronRight size={20} />
@@ -1400,7 +1400,7 @@ export default function WorkLog() {
                 <div className="text-[10px] tracking-[0.2em] text-[#7C8496] font-meter">DATE STATUS</div>
                 <div className="font-medium text-[#EDEFF3] mt-1">{statusLabel}</div>
                 {isMovedFrom ? (
-                  <div className="text-[12px] text-[#F5C542] mt-1">本来の公休・移動済み</div>
+                  <div className="text-[12px] text-[#FFD54A] mt-1">本来の公休・移動済み</div>
                 ) : null}
                 {isMovedDestination ? (
                   <div className="text-[12px] text-[#6EE7A8] mt-1">元の公休: {holidayInfo.originalDate}</div>
@@ -1416,8 +1416,8 @@ export default function WorkLog() {
                       onClick={() => setDateStatus(DAY_STATUS.WORKDAY, null)}
                       className={`rounded-full border px-3 py-2 text-sm transition-colors text-left ${
                         effectiveStatus === DAY_STATUS.WORKDAY
-                          ? "border-[#F5C542] bg-[#F5C542]/10 text-[#F5C542]"
-                          : "border-[#2A3140] text-[#8B93A1] hover:border-[#F5C542]"
+                          ? "border-[#FFD54A] bg-[#FFD54A]/10 text-[#FFD54A]"
+                          : "border-[#2A3140] text-[#8B93A1] hover:border-[#FFD54A]"
                       }`}
                     >
                       勤務日
@@ -1430,7 +1430,7 @@ export default function WorkLog() {
                         <button
                           type="button"
                           onClick={() => setHolidayOptionsOpen(true)}
-                          className="rounded-full border px-3 py-2 text-sm border-[#2A3140] text-[#8B93A1] hover:border-[#F5C542]"
+                          className="rounded-full border px-3 py-2 text-sm border-[#2A3140] text-[#8B93A1] hover:border-[#FFD54A]"
                         >
                           公休日を変更
                         </button>
@@ -1439,7 +1439,7 @@ export default function WorkLog() {
                       <button
                         type="button"
                         onClick={() => setHolidayOptionsOpen(true)}
-                        className="rounded-full border px-3 py-2 text-sm border-[#2A3140] text-[#8B93A1] hover:border-[#F5C542]"
+                        className="rounded-full border px-3 py-2 text-sm border-[#2A3140] text-[#8B93A1] hover:border-[#FFD54A]"
                       >
                         公休日に変更
                       </button>
@@ -1469,8 +1469,8 @@ export default function WorkLog() {
                           onClick={() => setDateStatus(option.status, option.holidayType)}
                           className={`rounded-full border px-3 py-2 text-sm transition-colors text-left ${
                             selected
-                              ? "border-[#F5C542] bg-[#F5C542]/10 text-[#F5C542]"
-                              : "border-[#2A3140] text-[#8B93A1] hover:border-[#F5C542]"
+                              ? "border-[#FFD54A] bg-[#FFD54A]/10 text-[#FFD54A]"
+                              : "border-[#2A3140] text-[#8B93A1] hover:border-[#FFD54A]"
                           }`}
                         >
                           {option.label}
@@ -1480,7 +1480,7 @@ export default function WorkLog() {
                     <button
                       type="button"
                       onClick={() => setHolidayOptionsOpen(false)}
-                      className="col-span-2 rounded-full border px-3 py-2 text-sm border-[#2A3140] text-[#8B93A1] hover:border-[#F5C542]"
+                      className="col-span-2 rounded-full border px-3 py-2 text-sm border-[#2A3140] text-[#8B93A1] hover:border-[#FFD54A]"
                     >
                       閉じる
                     </button>
@@ -1499,7 +1499,7 @@ export default function WorkLog() {
                     min={FIRST_WORKDAY}
                     value={holidayMoveTarget}
                     onChange={(e) => setHolidayMoveTarget(e.target.value)}
-                    className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-4 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#F5C542]"
+                    className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-4 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFD54A]"
                   />
                   <button
                     type="button"
@@ -1553,8 +1553,8 @@ export default function WorkLog() {
                           onClick={() => toggleDutyTag(tag)}
                           className={`rounded-full border px-3 py-2 text-sm transition-colors ${
                             selected
-                              ? "border-[#F5C542] bg-[#F5C542] text-[#12151A]"
-                              : "border-[#2A3140] text-[#8B93A1] hover:border-[#F5C542]"
+                              ? "border-[#FFD54A] bg-[#FFD54A] text-[#12151A]"
+                              : "border-[#2A3140] text-[#8B93A1] hover:border-[#FFD54A]"
                           }`}
                         >
                           {tag}
@@ -1571,11 +1571,11 @@ export default function WorkLog() {
             </div>
             ) : null}
             <div className="mx-5 mt-5 rounded-2xl bg-[#181D25] border border-[#232A36] overflow-hidden">
-              <div className="border-l-4 border-[#F5C542] px-5 py-5">
+              <div className="border-l-4 border-[#FFD54A] px-5 py-5">
                 <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter">売上 SALES</div>
                 <div
-                  className="font-meter font-bold text-[#FFD98A] mt-1 leading-none break-all"
-                  style={{ fontSize: "clamp(2.2rem, 9vw, 3rem)", textShadow: "0 0 13px rgba(245,197,66,0.26)" }}
+                  className="font-meter font-bold text-[#FFD54A] mt-1 leading-none break-all"
+                  style={{ fontSize: "clamp(2.2rem, 9vw, 3rem)", textShadow: "0 0 13px rgba(255,213,74,0.26)" }}
                 >
                   ¥{yen(totalSales)}
                 </div>
@@ -1619,7 +1619,7 @@ export default function WorkLog() {
                       <div className="flex flex-wrap gap-2">
                         {[
                           { value: "good", label: "◉ 良", className: "border-[#6EE7A8]/40 text-[#6EE7A8]" },
-                          { value: "normal", label: "○ 並", className: "border-[#F5C542]/40 text-[#F5C542]" },
+                          { value: "normal", label: "○ 並", className: "border-[#FFD54A]/40 text-[#FFD54A]" },
                           { value: "bad", label: "▲ 悪", className: "border-[#FF6B57]/40 text-[#FF6B57]" },
                         ].map((option) => {
                           const active = form.condition === option.value;
@@ -1654,7 +1654,7 @@ export default function WorkLog() {
                                 });
                               }}
                               className={`rounded-full border px-3 py-2 text-sm transition-colors ${
-                                active ? "border-[#F5C542] bg-[#F5C542]/10 text-[#F5C542]" : "border-[#2A3140] text-[#8B93A1]"
+                                active ? "border-[#FFD54A] bg-[#FFD54A]/10 text-[#FFD54A]" : "border-[#2A3140] text-[#8B93A1]"
                               }`}
                             >
                               {option.label}
@@ -1677,7 +1677,7 @@ export default function WorkLog() {
                     onChange={(e) => updateField("notes", e.target.value)}
                     placeholder="自由に入力"
                     rows={3}
-                    className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-4 text-[17px] text-[#EDEFF3] focus:outline-none focus:border-[#F5C542] resize-none"
+                    className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-4 text-[17px] text-[#EDEFF3] focus:outline-none focus:border-[#FFD54A] resize-none"
                   />
                 </Field>
               ) : null}
@@ -1701,7 +1701,7 @@ export default function WorkLog() {
                       value={form.count}
                       onChange={(e) => updateField("count", e.target.value)}
                       placeholder="0"
-                      className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-5 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#F5C542]"
+                      className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-5 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFD54A]"
                     />
                   </Field>
                   {!isLegacyMode ? (
@@ -1781,7 +1781,7 @@ export default function WorkLog() {
                         value={form.breakTime}
                         onChange={(v) => updateField("breakTime", v)}
                         options={BREAK_TIME_OPTIONS}
-                        className="w-full bg-[#181D25] border border-[#232A36] rounded-lg px-3 py-2.5 text-base font-meter text-[#EDEFF3] focus:outline-none focus:border-[#F5C542] disabled:opacity-60"
+                        className="w-full bg-[#181D25] border border-[#232A36] rounded-lg px-3 py-2.5 text-base font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFD54A] disabled:opacity-60"
                       />
                     </Field>
                     <Field label="勤務終了">
@@ -1789,7 +1789,7 @@ export default function WorkLog() {
                         value={form.workEnd}
                         onChange={(v) => updateField("workEnd", v)}
                         options={WORK_TIME_OPTIONS}
-                        className="w-full bg-[#181D25] border border-[#232A36] rounded-lg px-3 py-2.5 text-base font-meter text-[#EDEFF3] focus:outline-none focus:border-[#F5C542] disabled:opacity-60"
+                        className="w-full bg-[#181D25] border border-[#232A36] rounded-lg px-3 py-2.5 text-base font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFD54A] disabled:opacity-60"
                       />
                     </Field>
                   </div>
@@ -1802,7 +1802,7 @@ export default function WorkLog() {
                     value={form.workHours}
                     onChange={(e) => setForm((f) => ({ ...f, workHours: e.target.value, hoursOverride: true }))}
                     placeholder="0.0"
-                    className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-5 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#F5C542]"
+                    className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-5 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFD54A]"
                   />
                 </Field>
 
@@ -1813,7 +1813,7 @@ export default function WorkLog() {
                       onChange={(e) => updateField("notes", e.target.value)}
                       placeholder="自由に入力"
                       rows={3}
-                      className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-4 text-[17px] text-[#EDEFF3] focus:outline-none focus:border-[#F5C542] resize-none"
+                      className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-4 text-[17px] text-[#EDEFF3] focus:outline-none focus:border-[#FFD54A] resize-none"
                     />
                   </Field>
                 ) : null}
@@ -1821,7 +1821,7 @@ export default function WorkLog() {
                 <div className="flex gap-2 pt-1">
                   <button
                     onClick={handleSave}
-                    className="flex-1 flex items-center justify-center gap-1.5 bg-[#F5C542] text-[#12151A] font-medium text-[14px] py-3 rounded-lg active:bg-[#F9D66B] transition-colors"
+                    className="flex-1 flex items-center justify-center gap-1.5 bg-[#FFD54A] text-[#12151A] font-medium text-[14px] py-3 rounded-lg active:bg-[#FFE066] transition-colors"
                   >
                     <Save size={16} />
                     {saveState === "saved" ? "保存しました" : saveState === "error" ? "保存に失敗しました" : "この日を保存"}
@@ -1839,7 +1839,7 @@ export default function WorkLog() {
                 <div
                   className={`text-right text-[11px] mt-1 ${
                     autoSaveStatus === "saving"
-                      ? "text-[#F5C542]"
+                      ? "text-[#FFD54A]"
                       : autoSaveStatus === "error"
                         ? "text-[#FF6B57]"
                         : "text-[#7C8496]"
@@ -1870,11 +1870,11 @@ export default function WorkLog() {
                     onClick={handleToggleHoliday}
                     className={`flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition-colors ${
                       isHoliday
-                        ? "border-[#F5C542] bg-[#F5C542]/10 text-[#F5C542]"
+                        ? "border-[#FFD54A] bg-[#FFD54A]/10 text-[#FFD54A]"
                         : "border-[#2A3140] text-[#8B93A1]"
                     }`}
                   >
-                    <span className={`flex h-4 w-4 items-center justify-center rounded border ${isHoliday ? "border-[#F5C542] bg-[#F5C542] text-[#12151A]" : "border-[#8B93A1]"}`}>
+                    <span className={`flex h-4 w-4 items-center justify-center rounded border ${isHoliday ? "border-[#FFD54A] bg-[#FFD54A] text-[#12151A]" : "border-[#8B93A1]"}`}>
                       {isHoliday ? "✓" : ""}
                     </span>
                     公休日
@@ -1889,12 +1889,12 @@ export default function WorkLog() {
                 onChange={(e) => updateField("notes", e.target.value)}
                 placeholder="メモを入力"
                 rows={3}
-                className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-4 text-[17px] text-[#EDEFF3] focus:outline-none focus:border-[#F5C542] resize-none"
+                className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-4 text-[17px] text-[#EDEFF3] focus:outline-none focus:border-[#FFD54A] resize-none"
               />
             </div>
             <button
               onClick={handleSave}
-              className="w-full flex items-center justify-center gap-1.5 bg-[#F5C542] text-[#12151A] font-medium text-[14px] py-3 rounded-lg active:bg-[#F9D66B] transition-colors"
+              className="w-full flex items-center justify-center gap-1.5 bg-[#FFD54A] text-[#12151A] font-medium text-[14px] py-3 rounded-lg active:bg-[#FFE066] transition-colors"
             >
               <Save size={16} />
               {saveState === "saved" ? "保存しました" : saveState === "error" ? "保存に失敗しました" : "この日を保存"}
@@ -1902,7 +1902,7 @@ export default function WorkLog() {
             <div
               className={`text-right text-[11px] mt-1 ${
                 autoSaveStatus === "saving"
-                  ? "text-[#F5C542]"
+                  ? "text-[#FFD54A]"
                   : autoSaveStatus === "error"
                     ? "text-[#FF6B57]"
                     : "text-[#7C8496]"
@@ -2053,7 +2053,7 @@ export default function WorkLog() {
                       : "bg-[#2F343B] text-[#D1D5DB]"
                     : type === "worked"
                       ? "bg-[#6EE7A8]/10 text-[#6EE7A8]"
-                      : "bg-[#F5C542]/10 text-[#F5C542]";
+                      : "bg-[#FFD54A]/10 text-[#FFD54A]";
                 const statusLabel = type === "worked" ? "勤務済み" : type === "holiday" ? "公休日" : "勤務前";
                 const dutyTags = Array.isArray(entry.dutyTags) ? entry.dutyTags : [];
                 const holidayShortLabel = HOLIDAY_SHORT_LABEL[entry.holidayType] || "";
@@ -2073,7 +2073,7 @@ export default function WorkLog() {
                       }
                     }}
                     className={`rounded-xl border px-3 py-2 cursor-pointer transition-colors ${
-                      isSelected ? "border-[#F5C542] bg-[#1D2029]" : "border-[#232A36] bg-[#161A21] active:border-[#3A4152]"
+                      isSelected ? "border-[#FFD54A] bg-[#1D2029]" : "border-[#232A36] bg-[#161A21] active:border-[#3A4152]"
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
@@ -2134,8 +2134,8 @@ export default function WorkLog() {
                             onClick={() => changeDateSafely(getPeriodStartForYearMonth(year, month))}
                             className={`rounded-lg border px-2 py-2 text-[12px] text-center transition-colors ${
                               isSelected
-                                ? "border-[#F5C542] bg-[#F5C542]/10 text-[#F5C542]"
-                                : "border-[#2A3140] text-[#8B93A1] hover:border-[#F5C542]"
+                                ? "border-[#FFD54A] bg-[#FFD54A]/10 text-[#FFD54A]"
+                                : "border-[#2A3140] text-[#8B93A1] hover:border-[#FFD54A]"
                             }`}
                           >
                             {month}月度
@@ -2164,21 +2164,21 @@ export default function WorkLog() {
                 <button
                   type="button"
                   onClick={applyCsvPresetCurrentPeriod}
-                  className="flex-1 rounded-lg border border-[#2A3140] text-[#8B93A1] text-[11px] py-1.5 active:border-[#F5C542] transition-colors"
+                  className="flex-1 rounded-lg border border-[#2A3140] text-[#8B93A1] text-[11px] py-1.5 active:border-[#FFD54A] transition-colors"
                 >
                   現在の月度
                 </button>
                 <button
                   type="button"
                   onClick={applyCsvPresetThisYear}
-                  className="flex-1 rounded-lg border border-[#2A3140] text-[#8B93A1] text-[11px] py-1.5 active:border-[#F5C542] transition-colors"
+                  className="flex-1 rounded-lg border border-[#2A3140] text-[#8B93A1] text-[11px] py-1.5 active:border-[#FFD54A] transition-colors"
                 >
                   今年
                 </button>
                 <button
                   type="button"
                   onClick={applyCsvPresetAllTime}
-                  className="flex-1 rounded-lg border border-[#2A3140] text-[#8B93A1] text-[11px] py-1.5 active:border-[#F5C542] transition-colors"
+                  className="flex-1 rounded-lg border border-[#2A3140] text-[#8B93A1] text-[11px] py-1.5 active:border-[#FFD54A] transition-colors"
                 >
                   全期間
                 </button>
@@ -2190,7 +2190,7 @@ export default function WorkLog() {
                     type="date"
                     value={csvStartDate}
                     onChange={(e) => setCsvStartDate(e.target.value)}
-                    className="w-full mt-1 bg-[#181D25] border border-[#232A36] rounded-lg px-2 py-2 text-[13px] font-meter text-[#EDEFF3] focus:outline-none focus:border-[#F5C542]"
+                    className="w-full mt-1 bg-[#181D25] border border-[#232A36] rounded-lg px-2 py-2 text-[13px] font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFD54A]"
                   />
                 </div>
                 <div>
@@ -2199,28 +2199,28 @@ export default function WorkLog() {
                     type="date"
                     value={csvEndDate}
                     onChange={(e) => setCsvEndDate(e.target.value)}
-                    className="w-full mt-1 bg-[#181D25] border border-[#232A36] rounded-lg px-2 py-2 text-[13px] font-meter text-[#EDEFF3] focus:outline-none focus:border-[#F5C542]"
+                    className="w-full mt-1 bg-[#181D25] border border-[#232A36] rounded-lg px-2 py-2 text-[13px] font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFD54A]"
                   />
                 </div>
               </div>
             </div>
             <button
               onClick={handleExportCsv}
-              className="w-full flex items-center justify-center gap-2 bg-[#161A21] border border-[#2A3140] text-[#EDEFF3] text-[15px] py-4 rounded-xl active:border-[#F5C542] transition-colors"
+              className="w-full flex items-center justify-center gap-2 bg-[#161A21] border border-[#2A3140] text-[#EDEFF3] text-[15px] py-4 rounded-xl active:border-[#FFD54A] transition-colors"
             >
               <FileSpreadsheet size={18} />
               CSV書き出し
             </button>
             <button
               onClick={handleBackup}
-              className="w-full flex items-center justify-center gap-2 bg-[#161A21] border border-[#2A3140] text-[#EDEFF3] text-[15px] py-4 rounded-xl active:border-[#F5C542] transition-colors"
+              className="w-full flex items-center justify-center gap-2 bg-[#161A21] border border-[#2A3140] text-[#EDEFF3] text-[15px] py-4 rounded-xl active:border-[#FFD54A] transition-colors"
             >
               <Download size={18} />
               バックアップ（JSON）
             </button>
             <button
               onClick={() => restoreInputRef.current?.click()}
-              className="w-full flex items-center justify-center gap-2 bg-[#161A21] border border-[#2A3140] text-[#EDEFF3] text-[15px] py-4 rounded-xl active:border-[#F5C542] transition-colors"
+              className="w-full flex items-center justify-center gap-2 bg-[#161A21] border border-[#2A3140] text-[#EDEFF3] text-[15px] py-4 rounded-xl active:border-[#FFD54A] transition-colors"
             >
               <Upload size={18} />
               バックアップから復元
@@ -2315,7 +2315,7 @@ export default function WorkLog() {
               <button
                 onClick={confirmRestore}
                 disabled={restoreBusy}
-                className="flex-1 py-3 rounded-lg bg-[#F5C542] text-[#12151A] font-medium disabled:opacity-50"
+                className="flex-1 py-3 rounded-lg bg-[#FFD54A] text-[#12151A] font-medium disabled:opacity-50"
               >
                 {restoreBusy ? "復元中…" : "復元する"}
               </button>
@@ -2358,7 +2358,7 @@ function YenInput({ value, onChange, disabled = false }) {
         onChange={(e) => onChange(e.target.value)}
         placeholder="0"
         disabled={disabled}
-        className="w-full bg-[#181D25] border border-[#232A36] rounded-xl pl-9 pr-4 py-5 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#F5C542] disabled:opacity-60"
+        className="w-full bg-[#181D25] border border-[#232A36] rounded-xl pl-9 pr-4 py-5 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFD54A] disabled:opacity-60"
       />
     </div>
   );
@@ -2376,7 +2376,7 @@ function NumberInput({ value, onChange, min = 0, step = "any", placeholder = "0"
         min={min}
         step={step}
         disabled={disabled}
-        className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-5 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#F5C542] disabled:opacity-60"
+        className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-5 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFD54A] disabled:opacity-60"
       />
       {unit ? <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[#7C8496] text-sm">{unit}</span> : null}
     </div>
@@ -2391,7 +2391,7 @@ function TimeSelect({ value, onChange, options, disabled = false, className }) {
       disabled={disabled}
       className={
         className ||
-        "w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-5 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#F5C542] disabled:opacity-60"
+        "w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-5 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFD54A] disabled:opacity-60"
       }
     >
       <option value="">--:--</option>
