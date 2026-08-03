@@ -16,6 +16,7 @@ const LAST_BACKUP_KEY = "workLogLastBackupAt";
 const APP_NAME = "Masato Taxi AI";
 const APP_VERSION = "1.0";
 const DUTY_TAGS = [
+  "当番なし",
   "日赤",
   "日赤夜①",
   "日赤夜②",
