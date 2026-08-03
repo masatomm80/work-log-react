@@ -8,6 +8,11 @@
 
 Masato Taxi AI
 
+## 現在のバージョン
+
+**Ver.1.0**（安定版として確定済み）。大きな仕様変更はここで一旦区切り、以降の機能追加はVer.1.1以降として扱う。
+Ver.1.0確定時点の詳細は [docs/SPECIFICATION.md](docs/SPECIFICATION.md) を参照。
+
 ## 詳細仕様の参照先
 
 - [docs/SPECIFICATION.md](docs/SPECIFICATION.md) — コードを根拠とした現在の仕様、未実装・要確認事項
