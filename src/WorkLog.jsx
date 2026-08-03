@@ -653,6 +653,8 @@ export default function WorkLog() {
   // MONTHLY JUMPで開いている年度(1つだけ)。初期値は現在開いている月度の年。
   // 一度ユーザーが閉じたら、selectedDateが変わっても自動では開き直さない。
   const [expandedJumpYear, setExpandedJumpYear] = useState(() => Number(getPeriodBounds(selectedDate).end.slice(0, 4)));
+  // MONTHLY LOGで「選択→再タップでジャンプ」するための、1回目タップで選ばれている日付。
+  const [selectedLogDate, setSelectedLogDate] = useState(null);
   const dateInputRef = useRef(null);
   const restoreInputRef = useRef(null);
   const toastTimer = useRef(null);
@@ -685,6 +687,11 @@ export default function WorkLog() {
   useEffect(() => {
     formRef.current = form;
   }, [form]);
+
+  // 日付が(ジャンプ以外の操作も含めて)変わったら、MONTHLY LOGの1回目タップ選択状態を解除する。
+  useEffect(() => {
+    setSelectedLogDate(null);
+  }, [selectedDate]);
 
   const monthlyLogRange = useMemo(() => getPeriodRange(selectedDate), [selectedDate]);
   // MONTHLY JUMPの年度一覧。2024年度から「現在年 or 選択中の年」の遅い方まで、新しい年度が上にくる降順。
@@ -1948,7 +1955,7 @@ export default function WorkLog() {
               {monthlyLogEntries.map((entry) => {
                 const label = fmtDateLabel(entry.date);
                 const type = entry.monthlyLogType;
-                const isSelected = entry.date === selectedDate;
+                const isSelected = entry.date === selectedLogDate;
                 const badgeClasses =
                   type === "holiday"
                     ? entry.holidayInfo?.type === "red"
@@ -1971,7 +1978,14 @@ export default function WorkLog() {
                 return (
                   <div
                     key={entry.id}
-                    onClick={() => changeDateSafely(entry.date)}
+                    onClick={() => {
+                      if (selectedLogDate === entry.date) {
+                        changeDateSafely(entry.date);
+                        setSelectedLogDate(null);
+                      } else {
+                        setSelectedLogDate(entry.date);
+                      }
+                    }}
                     className={`rounded-xl border px-4 py-3 cursor-pointer transition-colors ${
                       isSelected ? "border-[#FFB454] bg-[#1D2029]" : "border-[#232A36] bg-[#161A21] active:border-[#3A4152]"
                     }`}
