@@ -1331,7 +1331,7 @@ export default function WorkLog() {
         <h1 className="font-display text-2xl mt-1" style={{ fontWeight: 900 }}>
           masato taxi ai
         </h1>
-        <p className="text-[13px] text-[#7C8496] mt-0.5">売上・チップ・勤務時間をその日のうちに</p>
+        <p className="text-[13px] text-[#7C8496] mt-0.5">記録が戦略に。</p>
       </header>
 
       {/* Date nav */}
@@ -1673,7 +1673,7 @@ export default function WorkLog() {
               ) : null}
 
               <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-4">
-                <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter">営業データ</div>
+                <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter">営業記録</div>
                 <div className="grid grid-cols-2 gap-4">
                   <Field label="売上">
                     <YenInput value={form.sales} onChange={(v) => updateField("sales", v)} disabled={false} />
@@ -1684,7 +1684,7 @@ export default function WorkLog() {
                   <Field label="チップ">
                     <YenInput value={form.tip} onChange={(v) => updateField("tip", v)} disabled={false} />
                   </Field>
-                  <Field label="回数（メーター外は含まず）">
+                  <Field label="回数 ※メーター外含まず">
                     <input
                       type="number"
                       inputMode="numeric"
@@ -1696,7 +1696,7 @@ export default function WorkLog() {
                   </Field>
                   {!isLegacyMode ? (
                     <>
-                      <Field label="手上げ乗車回数" helperText="通常の回数に含まれる手上げ乗車の回数" warning={handRaisedWarning}>
+                      <Field label="手上げ乗車回数" helperText="※通常の回数に含まれる" warning={handRaisedWarning}>
                         <NumberInput
                           value={form.handRaisedCount}
                           onChange={(v) => updateField("handRaisedCount", v)}
@@ -1705,7 +1705,7 @@ export default function WorkLog() {
                           placeholder="0"
                         />
                       </Field>
-                      <Field label="アプリ乗車回数" helperText="通常の回数に含まれるアプリ乗車の回数" warning={appRideWarning}>
+                      <Field label="アプリ乗車回数" helperText="※通常の回数に含まれる" warning={appRideWarning}>
                         <NumberInput
                           value={form.appRideCount}
                           onChange={(v) => updateField("appRideCount", v)}
