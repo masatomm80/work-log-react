@@ -255,7 +255,10 @@ function ensureRecordFormat(entry) {
     return t;
   });
   const holidayFraction = normalizedEntry.holidayFraction ?? inferHolidayFraction(normalizedEntry.holidayType);
-  return { ...normalizedEntry, recordFormat, dutyTags, holidayFraction };
+  // entryStatus(編集中/入力済み)はdayStatus(勤務日/公休日など)とは完全に独立した値。
+  // 既存データに値が無い場合は"editing"として扱う(一括変換や削除は行わない)。
+  const entryStatus = normalizedEntry.entryStatus === "completed" ? "completed" : "editing";
+  return { ...normalizedEntry, recordFormat, dutyTags, holidayFraction, entryStatus };
 }
 function isLegacyRecord(entry) {
   return inferRecordFormat(entry) === "legacy";
@@ -289,6 +292,7 @@ function getComparableFormData(record) {
   return {
     date: record.date ?? null,
     dayStatus: record.dayStatus ?? null,
+    entryStatus: record.entryStatus === "completed" ? "completed" : "editing",
     holidayType: record.holidayType ?? null,
     holidayFraction: record.holidayFraction ?? null,
     holidayOrigin: record.holidayOrigin ?? null,
@@ -558,6 +562,7 @@ const emptyForm = (date) => ({
   holidayType: null,
   holidayOrigin: null,
   holidayFraction: 1,
+  entryStatus: "editing",
 });
 
 function normalizeForm(date, existing, holidayInfo = null) {
@@ -650,6 +655,7 @@ export default function WorkLog() {
   const [selectedDate, setSelectedDate] = useState(todayISO());
   const [form, setForm] = useState(emptyForm(todayISO()));
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [confirmReeditOpen, setConfirmReeditOpen] = useState(false);
   const [toast, setToast] = useState(null);
   const [holidayMoveTarget, setHolidayMoveTarget] = useState("");
   const [dutyStampOpen, setDutyStampOpen] = useState(false);
@@ -845,6 +851,37 @@ export default function WorkLog() {
   const flushPendingSave = () => {
     clearTimeout(autoSaveTimerRef.current);
     return saveCurrentForm({ source: "flush" });
+  };
+
+  // entryStatus(編集中/入力済み)の切替専用。setFormと同時にformRef.currentも直接更新してから
+  // 既存のsaveCurrentForm(source:"flush")を再利用して即時保存する。800msのdebounceは待たない。
+  // 保存に失敗した場合(バリデーションエラー等)は、フォームがロックされたまま編集できなくなる事態を
+  // 避けるため、entryStatusの変更を画面上も元に戻す。
+  const setEntryStatusAndSave = (nextStatus) => {
+    const updated = { ...formRef.current, entryStatus: nextStatus };
+    formRef.current = updated;
+    setForm(updated);
+    const result = flushPendingSave();
+    if (!result.ok) {
+      const reverted = { ...formRef.current, entryStatus: nextStatus === "completed" ? "editing" : "completed" };
+      formRef.current = reverted;
+      setForm(reverted);
+    }
+  };
+
+  const handleMarkCompleted = () => setEntryStatusAndSave("completed");
+
+  const handleEntryStatusButtonClick = () => {
+    if (form.entryStatus === "completed") {
+      setConfirmReeditOpen(true);
+    } else {
+      handleMarkCompleted();
+    }
+  };
+
+  const handleConfirmReedit = () => {
+    setConfirmReeditOpen(false);
+    setEntryStatusAndSave("editing");
   };
 
   // 日付変更・読込直後のフォーム反映では発火させず、入力が止まってから800ms後に1回だけ自動保存する。
@@ -1246,6 +1283,8 @@ export default function WorkLog() {
   const isRedHoliday = isHoliday && form.holidayType === "red";
   const showNormalEntryForm = canShowWorkForm({ dayStatus: effectiveStatus, holidayType: form.holidayType });
   const isDayOff = effectiveStatus === DAY_STATUS.DAYOFF;
+  // entryStatus(編集中/入力済み)。dayStatus(勤務日/公休日)とは無関係にフォームのロック有無だけを決める。
+  const isEntryLocked = form.entryStatus === "completed";
   const isBeforeHolidayAutoCycle = selectedDate < HOLIDAY_AUTO_CYCLE_START;
   const isTodaySelected = selectedDate === todayISO();
   const statusLabel = getStatusLabel(effectiveStatus);
@@ -1394,7 +1433,10 @@ export default function WorkLog() {
 
       <div className="max-w-[560px] mx-auto">
         <div className="mx-5 mt-4 rounded-2xl border border-[#232A36] bg-[#171C24] px-4 py-3">
-          <div className="flex flex-col gap-3">
+          <fieldset
+            disabled={isEntryLocked}
+            className={`flex flex-col gap-3 border-0 p-0 m-0 min-w-0${isEntryLocked ? " opacity-80" : ""}`}
+          >
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="text-[10px] tracking-[0.2em] text-[#7C8496] font-meter">DATE STATUS</div>
@@ -1524,12 +1566,15 @@ export default function WorkLog() {
                 </button>
               </div>
             ) : null}
-          </div>
+          </fieldset>
         </div>
         {showNormalEntryForm ? (
           <>
             {!isLegacyMode ? (
-            <div className="mx-5 mt-3 rounded-2xl border border-[#232A36] bg-[#171C24] overflow-hidden">
+            <fieldset
+              disabled={isEntryLocked}
+              className={`mx-5 mt-3 rounded-2xl border border-[#232A36] bg-[#171C24] overflow-hidden${isEntryLocked ? " opacity-80" : ""}`}
+            >
               <button
                 type="button"
                 onClick={() => setDutyStampOpen((open) => !open)}
@@ -1568,7 +1613,7 @@ export default function WorkLog() {
                   {dutyStampSummary}
                 </div>
               )}
-            </div>
+            </fieldset>
             ) : null}
             <div className="mx-5 mt-5 rounded-2xl bg-[#181D25] border border-[#232A36] overflow-hidden">
               <div className="border-l-4 border-[#FFD54A] px-5 py-5">
@@ -1612,7 +1657,10 @@ export default function WorkLog() {
             {/* Form */}
             <div className="mx-5 mt-5 space-y-5">
               {!isLegacyMode ? (
-                <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-4">
+                <fieldset
+                  disabled={isEntryLocked}
+                  className={`rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-4${isEntryLocked ? " opacity-80" : ""}`}
+                >
                   <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter">朝入力</div>
                   <div className="grid grid-cols-2 gap-4">
                     <Field label="体調">
@@ -1667,7 +1715,7 @@ export default function WorkLog() {
                       <TimeSelect value={form.workStart} onChange={(v) => updateField("workStart", v)} options={WORK_TIME_OPTIONS} />
                     </Field>
                   </div>
-                </div>
+                </fieldset>
               ) : null}
 
               {!isLegacyMode ? (
@@ -1677,12 +1725,16 @@ export default function WorkLog() {
                     onChange={(e) => updateField("notes", e.target.value)}
                     placeholder="自由に入力"
                     rows={3}
-                    className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-4 text-[17px] text-[#EDEFF3] focus:outline-none focus:border-[#FFD54A] resize-none"
+                    disabled={isEntryLocked}
+                    className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-4 text-[17px] text-[#EDEFF3] focus:outline-none focus:border-[#FFD54A] resize-none disabled:opacity-70"
                   />
                 </Field>
               ) : null}
 
-              <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-4">
+              <fieldset
+                disabled={isEntryLocked}
+                className={`rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-4${isEntryLocked ? " opacity-80" : ""}`}
+              >
                 <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter">営業記録</div>
                 <div className="grid grid-cols-2 gap-4">
                   <Field label="売上">
@@ -1752,7 +1804,7 @@ export default function WorkLog() {
                     </>
                   ) : null}
                 </div>
-              </div>
+              </fieldset>
 
               {!isLegacyMode ? (
                 <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-4">
@@ -1774,6 +1826,10 @@ export default function WorkLog() {
                 {!isLegacyMode ? (
                   <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter">終了時</div>
                 ) : null}
+                <fieldset
+                  disabled={isEntryLocked}
+                  className={`space-y-4 border-0 p-0 m-0 min-w-0${isEntryLocked ? " opacity-80" : ""}`}
+                >
                 {!isLegacyMode ? (
                   <div className="grid grid-cols-2 gap-4">
                     <Field label="休憩時間">
@@ -1817,19 +1873,15 @@ export default function WorkLog() {
                     />
                   </Field>
                 ) : null}
+                </fieldset>
 
                 <div className="flex gap-2 pt-1">
-                  <button
-                    onClick={handleSave}
-                    className="flex-1 flex items-center justify-center gap-1.5 bg-[#FFD54A] text-[#12151A] font-medium text-[14px] py-3 rounded-lg active:bg-[#FFE066] transition-colors"
-                  >
-                    <Save size={16} />
-                    {saveState === "saved" ? "保存しました" : saveState === "error" ? "保存に失敗しました" : "この日を保存"}
-                  </button>
+                  <EntryStatusButton status={form.entryStatus} onClick={handleEntryStatusButtonClick} className="flex-1" />
                   {form.id && (
                     <button
                       onClick={() => setConfirmDeleteId(form.id)}
-                      className="px-4 rounded-lg border border-[#2A3140] text-[#7C8496] active:border-[#FF6B57] active:text-[#FF6B57] transition-colors"
+                      disabled={isEntryLocked}
+                      className="px-4 rounded-lg border border-[#2A3140] text-[#7C8496] active:border-[#FF6B57] active:text-[#FF6B57] transition-colors disabled:opacity-40"
                       aria-label="削除"
                     >
                       <Trash2 size={18} />
@@ -1862,43 +1914,42 @@ export default function WorkLog() {
                 <div className="font-medium text-[#EDEFF3]">公休日</div>
               </div>
             ) : null}
-            {isHoliday ? (
-              <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-[12px] text-[#7C8496]">公休日チェック</div>
-                  <button
-                    onClick={handleToggleHoliday}
-                    className={`flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition-colors ${
-                      isHoliday
-                        ? "border-[#FFD54A] bg-[#FFD54A]/10 text-[#FFD54A]"
-                        : "border-[#2A3140] text-[#8B93A1]"
-                    }`}
-                  >
-                    <span className={`flex h-4 w-4 items-center justify-center rounded border ${isHoliday ? "border-[#FFD54A] bg-[#FFD54A] text-[#12151A]" : "border-[#8B93A1]"}`}>
-                      {isHoliday ? "✓" : ""}
-                    </span>
-                    公休日
-                  </button>
-                </div>
-              </div>
-            ) : null}
-            <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-3">
-              <div className="text-[12px] text-[#7C8496]">コメント</div>
-              <textarea
-                value={form.notes}
-                onChange={(e) => updateField("notes", e.target.value)}
-                placeholder="メモを入力"
-                rows={3}
-                className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-4 text-[17px] text-[#EDEFF3] focus:outline-none focus:border-[#FFD54A] resize-none"
-              />
-            </div>
-            <button
-              onClick={handleSave}
-              className="w-full flex items-center justify-center gap-1.5 bg-[#FFD54A] text-[#12151A] font-medium text-[14px] py-3 rounded-lg active:bg-[#FFE066] transition-colors"
+            <fieldset
+              disabled={isEntryLocked}
+              className={`space-y-4 border-0 p-0 m-0 min-w-0${isEntryLocked ? " opacity-80" : ""}`}
             >
-              <Save size={16} />
-              {saveState === "saved" ? "保存しました" : saveState === "error" ? "保存に失敗しました" : "この日を保存"}
-            </button>
+              {isHoliday ? (
+                <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-[12px] text-[#7C8496]">公休日チェック</div>
+                    <button
+                      onClick={handleToggleHoliday}
+                      className={`flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition-colors ${
+                        isHoliday
+                          ? "border-[#FFD54A] bg-[#FFD54A]/10 text-[#FFD54A]"
+                          : "border-[#2A3140] text-[#8B93A1]"
+                      }`}
+                    >
+                      <span className={`flex h-4 w-4 items-center justify-center rounded border ${isHoliday ? "border-[#FFD54A] bg-[#FFD54A] text-[#12151A]" : "border-[#8B93A1]"}`}>
+                        {isHoliday ? "✓" : ""}
+                      </span>
+                      公休日
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+              <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-3">
+                <div className="text-[12px] text-[#7C8496]">コメント</div>
+                <textarea
+                  value={form.notes}
+                  onChange={(e) => updateField("notes", e.target.value)}
+                  placeholder="メモを入力"
+                  rows={3}
+                  className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-4 text-[17px] text-[#EDEFF3] focus:outline-none focus:border-[#FFD54A] resize-none"
+                />
+              </div>
+            </fieldset>
+            <EntryStatusButton status={form.entryStatus} onClick={handleEntryStatusButtonClick} className="w-full" />
             <div
               className={`text-right text-[11px] mt-1 ${
                 autoSaveStatus === "saving"
@@ -2268,6 +2319,40 @@ export default function WorkLog() {
         </div>
       )}
 
+      {confirmReeditOpen && (
+        <div
+          className="fixed inset-0 bg-black/60 flex items-end justify-center z-20"
+          onClick={() => setConfirmReeditOpen(false)}
+        >
+          <div
+            className="bg-[#1B2029] border border-[#2A3140] rounded-t-2xl w-full max-w-[560px] p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <span className="font-display font-bold text-[15px]">この日の入力を再編集しますか？</span>
+              <button onClick={() => setConfirmReeditOpen(false)} className="text-[#7C8496]">
+                <X size={18} />
+              </button>
+            </div>
+            <p className="text-[13px] text-[#7C8496] mb-4">入力内容の変更が可能になります。</p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setConfirmReeditOpen(false)}
+                className="flex-1 py-3 rounded-lg border border-[#2A3140] text-[#EDEFF3]"
+              >
+                キャンセル
+              </button>
+              <button
+                onClick={handleConfirmReedit}
+                className="flex-1 py-3 rounded-lg bg-[#FFD54A] text-[#12151A] font-medium"
+              >
+                編集する
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Restore confirm */}
       {pendingRestore && (
         <div
@@ -2331,6 +2416,24 @@ export default function WorkLog() {
         </div>
       )}
     </div>
+  );
+}
+
+// 編集中/入力済みの切替ボタン。編集中は既存のアクセント黄色、入力済みは落ち着いた緑でロック済みを示す。
+function EntryStatusButton({ status, onClick, className = "" }) {
+  const isCompleted = status === "completed";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex items-center justify-center gap-1.5 font-medium text-[14px] py-3 rounded-lg border transition-colors ${
+        isCompleted
+          ? "border-[#6EE7A8]/50 bg-[#6EE7A8]/10 text-[#6EE7A8] active:bg-[#6EE7A8]/20"
+          : "border-transparent bg-[#FFD54A] text-[#12151A] active:bg-[#FFE066]"
+      } ${className}`}
+    >
+      {isCompleted ? "入力済み" : "編集中"}
+    </button>
   );
 }
 
