@@ -912,16 +912,28 @@ export default function WorkLog() {
   // ベースにして他フィールドは一切変更せず、無ければnormalizeForm(date, null, holidayInfo)で新規作成する
   // (formRef.currentをベースにしないのは、メインフォーム側の未保存input値を営業明細の保存につられて
   // 誤って永続化しないため)。
+  //
+  // 競合防止: DAILY LOG本体に未保存の変更(800msの自動保存debounce待ち)がある状態で営業明細を
+  // 追加・編集・削除すると、その直後にentries変更を監視するフォーム再同期useEffectが走り、
+  // 「保存前の入力中の値」が「entries側の古い保存済みの値」に戻って見えてしまう。これを防ぐため、
+  // 既存のflushPendingSave()(日付移動時などと同じ共通処理)を使って先にDAILY LOG側の保留中の変更を
+  // 確定させてから、その結果(flushResult.entries)を基準にrideDetailsを書き換える。
+  // flushに失敗した場合(バリデーションエラー等)は、営業明細側の変更も行わない。
   const saveRideDetails = (nextRideDetails) => {
     const date = selectedDate;
+    const flushResult = flushPendingSave();
+    if (flushResult.ok === false) {
+      return { ok: false, rideDetails: Array.isArray(nextRideDetails) ? nextRideDetails : [] };
+    }
+    const baseEntries = flushResult.entries || entries;
     const renumbered = renumberRideDetails(nextRideDetails);
-    const existing = entries.find((e) => e.date === date) || null;
+    const existing = baseEntries.find((e) => e.date === date) || null;
     const base = existing ? ensureRecordFormat(existing) : normalizeForm(date, null, holidayInfo);
     const id = base.id || `${date}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const nextRecord = { ...base, id, rideDetails: renumbered };
     const nextEntries = existing
-      ? entries.map((e) => (e.date === date ? nextRecord : e))
-      : [...entries, nextRecord];
+      ? baseEntries.map((e) => (e.date === date ? nextRecord : e))
+      : [...baseEntries, nextRecord];
     setEntries(nextEntries);
     const ok = persistEntries(nextEntries);
     return { ok, rideDetails: renumbered };
