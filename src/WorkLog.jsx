@@ -2817,6 +2817,18 @@ function RideDetailsPanel({ open, onClose, dateLabel, rideDetails, locked, onSav
     onSave(next);
     setConfirmDeleteId(null);
   };
+  // ↑↓並べ替え。配列内の隣接要素を入れ替えてから、既存のrenumberRideDetails()でnumberを振り直し、
+  // 既存のsaveRideDetails(onSave)経由で保存する(保存経路・flush連携は新規に作らず共通のものを再利用する)。
+  const moveRideDetail = (index, direction) => {
+    if (locked) return;
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= list.length) return;
+    const next = [...list];
+    const temp = next[index];
+    next[index] = next[targetIndex];
+    next[targetIndex] = temp;
+    onSave(renumberRideDetails(next));
+  };
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-end justify-center z-30" onClick={onClose}>
@@ -2842,49 +2854,83 @@ function RideDetailsPanel({ open, onClose, dateLabel, rideDetails, locked, onSav
               <div className="text-[13px] text-[#7C8496] py-6 text-center">まだ営業明細がありません</div>
             ) : (
               <div className="space-y-2">
-                {list.map((item) => (
-                  <div key={item.id} className="rounded-xl border border-[#232A36] bg-[#181D25] p-3">
-                    <button
-                      type="button"
-                      onClick={() => startEdit(item)}
-                      disabled={locked}
-                      className="w-full text-left disabled:opacity-90"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[11px] text-[#7C8496] font-meter">No.{item.number}</span>
-                        <span className="text-[13px] font-meter font-medium text-[#FFD54A]">
-                          {item.amount !== "" && item.amount !== null && item.amount !== undefined && !Number.isNaN(Number(item.amount))
-                            ? `¥${yen(item.amount)}`
-                            : "—"}
-                        </span>
-                      </div>
-                      <div className="text-[13px] text-[#EDEFF3] mt-1 font-meter">
-                        {item.pickupTime || "--:--"} → {item.dropoffTime || "--:--"}
-                      </div>
-                      <div className="text-[12px] text-[#7C8496] mt-0.5 break-all">
-                        {item.pickupLocation || "（乗車場所未入力）"} → {item.dropoffLocation || "（降車場所未入力）"}
-                      </div>
-                      <div className="flex items-center gap-2 mt-1.5">
-                        <span className="text-[11px] rounded-full border border-[#2A3140] px-2 py-0.5 text-[#8B93A1]">
-                          {RIDE_TYPE_LABEL[item.rideType] || "一般"}
-                        </span>
-                        {item.favorite ? <span className="text-[11px] text-[#FFD54A]">★ お気に入り</span> : null}
-                      </div>
-                      {item.note ? <div className="text-[12px] text-[#7C8496] mt-1 break-all">{item.note}</div> : null}
-                    </button>
-                    {!locked ? (
-                      <div className="flex justify-end mt-2">
+                {list.map((item, index) => {
+                  const isFirst = index === 0;
+                  const isLast = index === list.length - 1;
+                  return (
+                    <div key={item.id} className="rounded-xl border border-[#232A36] bg-[#181D25] px-3 py-2.5">
+                      <button
+                        type="button"
+                        onClick={() => startEdit(item)}
+                        disabled={locked}
+                        className="w-full text-left disabled:opacity-90 min-w-0"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] text-[#7C8496] font-meter shrink-0">No.{item.number}</span>
+                          <span className="text-[13px] text-[#EDEFF3] font-meter shrink-0">{item.pickupTime || "--:--"}</span>
+                          <span className="text-[11px] rounded-full border border-[#2A3140] px-2 py-0.5 text-[#8B93A1] shrink-0">
+                            {RIDE_TYPE_LABEL[item.rideType] || "一般"}
+                          </span>
+                          <span className="ml-auto text-[13px] font-meter font-medium text-[#FFD54A] shrink-0">
+                            {item.amount !== "" && item.amount !== null && item.amount !== undefined && !Number.isNaN(Number(item.amount))
+                              ? `¥${yen(item.amount)}`
+                              : "—"}
+                          </span>
+                        </div>
+                        <div className="mt-1 text-[12px] text-[#7C8496] truncate">
+                          {item.pickupLocation || "（乗車場所未入力）"} → {item.dropoffLocation || "（降車場所未入力）"}
+                        </div>
+                      </button>
+                      <div className="flex items-center justify-end gap-1.5 mt-1.5">
                         <button
-                          onClick={() => setConfirmDeleteId(item.id)}
-                          className="text-[#7C8496] active:text-[#FF6B57] transition-colors"
-                          aria-label="この営業明細を削除"
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            moveRideDetail(index, -1);
+                          }}
+                          disabled={locked || isFirst}
+                          aria-label="1つ上へ移動"
+                          className={`flex h-7 w-7 items-center justify-center rounded-md border text-[13px] transition-colors ${
+                            locked || isFirst
+                              ? "border-[#232A36] text-[#4B525E]"
+                              : "border-[#2A3140] text-[#8B93A1] active:border-[#FFD54A] active:text-[#FFD54A]"
+                          }`}
                         >
-                          <Trash2 size={16} />
+                          ↑
                         </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            moveRideDetail(index, 1);
+                          }}
+                          disabled={locked || isLast}
+                          aria-label="1つ下へ移動"
+                          className={`flex h-7 w-7 items-center justify-center rounded-md border text-[13px] transition-colors ${
+                            locked || isLast
+                              ? "border-[#232A36] text-[#4B525E]"
+                              : "border-[#2A3140] text-[#8B93A1] active:border-[#FFD54A] active:text-[#FFD54A]"
+                          }`}
+                        >
+                          ↓
+                        </button>
+                        {!locked ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setConfirmDeleteId(item.id);
+                            }}
+                            className="flex h-7 w-7 items-center justify-center rounded-md text-[#7C8496] active:text-[#FF6B57] transition-colors"
+                            aria-label="この営業明細を削除"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        ) : null}
                       </div>
-                    ) : null}
-                  </div>
-                ))}
+                    </div>
+                  );
+                })}
               </div>
             )}
             {!locked ? (
