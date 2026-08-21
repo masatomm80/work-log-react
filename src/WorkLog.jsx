@@ -38,6 +38,13 @@ const WEATHER_OPTIONS = [
   { value: "rain", label: "雨" },
   { value: "snow", label: "雪" },
 ];
+// 営業明細(rideDetails)の乗車種別。Step①時点ではこの3種類のみ。
+const RIDE_TYPE_OPTIONS = [
+  { value: "general", label: "一般" },
+  { value: "app", label: "アプリ" },
+  { value: "street", label: "手上げ" },
+];
+const RIDE_TYPE_LABEL = { general: "一般", app: "アプリ", street: "手上げ" };
 const WEEKDAY_JA = ["日", "月", "火", "水", "木", "金", "土"];
 const FIRST_WORKDAY = "2024-12-22";
 const HOLIDAY_AUTO_CYCLE_START = "2026-07-21";
@@ -235,6 +242,26 @@ function inferHolidayFraction(holidayType) {
   return 1;
 }
 
+// 営業明細(rideDetails)1件の初期値。idはnull(保存時に採番)、numberは表示順で都度振り直す。
+function emptyRideDetail() {
+  return {
+    id: null,
+    number: 1,
+    pickupTime: "",
+    dropoffTime: "",
+    pickupLocation: "",
+    dropoffLocation: "",
+    amount: "",
+    rideType: "general",
+    favorite: false,
+    note: "",
+  };
+}
+// numberは配列の並び順から都度再計算する(idは変更しない)。追加・削除・将来の並べ替え後は必ずこれを通す。
+function renumberRideDetails(list) {
+  return (Array.isArray(list) ? list : []).map((item, index) => ({ ...item, number: index + 1 }));
+}
+
 function canShowWorkForm(entryLike) {
   // entryLike can be an object with dayStatus and holidayType, or just a holidayType string
   if (!entryLike) return false;
@@ -258,7 +285,9 @@ function ensureRecordFormat(entry) {
   // entryStatus(編集中/入力済み)はdayStatus(勤務日/公休日など)とは完全に独立した値。
   // 既存データに値が無い場合は"editing"として扱う(一括変換や削除は行わない)。
   const entryStatus = normalizedEntry.entryStatus === "completed" ? "completed" : "editing";
-  return { ...normalizedEntry, recordFormat, dutyTags, holidayFraction, entryStatus };
+  // rideDetails(営業明細)。既存データに存在しない場合は[]として安全に扱う(一括変換や既存フィールドの書き換えは行わない)。
+  const rideDetails = Array.isArray(normalizedEntry.rideDetails) ? normalizedEntry.rideDetails : [];
+  return { ...normalizedEntry, recordFormat, dutyTags, holidayFraction, entryStatus, rideDetails };
 }
 function isLegacyRecord(entry) {
   return inferRecordFormat(entry) === "legacy";
@@ -313,7 +342,24 @@ function getComparableFormData(record) {
     breakTime: record.breakTime ?? "",
     workHours: record.workHours ?? "",
     hoursOverride: Boolean(record.hoursOverride),
+    rideDetails: getComparableRideDetails(record.rideDetails),
   };
+}
+// rideDetails配列を、キー順を固定したオブジェクトの配列へ変換する。
+// JSON.stringifyによる比較(isFormUnchanged)を安定させるため、営業明細側の項目もここで正規化する。
+function getComparableRideDetails(list) {
+  return (Array.isArray(list) ? list : []).map((item) => ({
+    id: item?.id ?? null,
+    number: item?.number ?? null,
+    pickupTime: item?.pickupTime ?? "",
+    dropoffTime: item?.dropoffTime ?? "",
+    pickupLocation: item?.pickupLocation ?? "",
+    dropoffLocation: item?.dropoffLocation ?? "",
+    amount: item?.amount ?? "",
+    rideType: item?.rideType ?? "general",
+    favorite: Boolean(item?.favorite),
+    note: item?.note ?? "",
+  }));
 }
 function isFormUnchanged(record, comparableSnapshot) {
   if (!comparableSnapshot) return false;
@@ -563,6 +609,7 @@ const emptyForm = (date) => ({
   holidayOrigin: null,
   holidayFraction: 1,
   entryStatus: "editing",
+  rideDetails: [],
 });
 
 function normalizeForm(date, existing, holidayInfo = null) {
@@ -668,6 +715,8 @@ export default function WorkLog() {
   const [expandedJumpYear, setExpandedJumpYear] = useState(null); // 初期状態はすべて閉じる
   // MONTHLY LOGで「選択→再タップでジャンプ」するための、1回目タップで選ばれている日付。
   const [selectedLogDate, setSelectedLogDate] = useState(null);
+  // 営業明細パネル(RideDetailsPanel)の開閉状態。選択中の日付専用のパネルなので、日付が変わったら閉じる。
+  const [rideDetailsPanelOpen, setRideDetailsPanelOpen] = useState(false);
   // CSV書き出しの対象期間。初期値は現在開いている月度(既存のgetPeriodRangeを利用)。
   const [csvStartDate, setCsvStartDate] = useState(() => getPeriodRange(selectedDate).start);
   const [csvEndDate, setCsvEndDate] = useState(() => getPeriodRange(selectedDate).end);
@@ -709,6 +758,11 @@ export default function WorkLog() {
   // 日付が(ジャンプ以外の操作も含めて)変わったら、MONTHLY LOGの1回目タップ選択状態を解除する。
   useEffect(() => {
     setSelectedLogDate(null);
+  }, [selectedDate]);
+
+  // 日付が変わったら営業明細パネルも閉じる(別日のパネルが開いたままにならないようにする)。
+  useEffect(() => {
+    setRideDetailsPanelOpen(false);
   }, [selectedDate]);
 
   // 日付が切り替わったら(MONTHLY LOGからのジャンプを含むすべての日付変更で)、詳細画面を最上部から表示する。
@@ -851,6 +905,26 @@ export default function WorkLog() {
   const flushPendingSave = () => {
     clearTimeout(autoSaveTimerRef.current);
     return saveCurrentForm({ source: "flush" });
+  };
+
+  // 営業明細(rideDetails)専用の保存処理。DAILY LOG本体の売上・回数・距離等のバリデーション(saveCurrentForm)には
+  // 一切依存せず、選択中の日付のentryのrideDetailsだけを書き換える。既存entriesに対象日のentryがあればそれを
+  // ベースにして他フィールドは一切変更せず、無ければnormalizeForm(date, null, holidayInfo)で新規作成する
+  // (formRef.currentをベースにしないのは、メインフォーム側の未保存input値を営業明細の保存につられて
+  // 誤って永続化しないため)。
+  const saveRideDetails = (nextRideDetails) => {
+    const date = selectedDate;
+    const renumbered = renumberRideDetails(nextRideDetails);
+    const existing = entries.find((e) => e.date === date) || null;
+    const base = existing ? ensureRecordFormat(existing) : normalizeForm(date, null, holidayInfo);
+    const id = base.id || `${date}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const nextRecord = { ...base, id, rideDetails: renumbered };
+    const nextEntries = existing
+      ? entries.map((e) => (e.date === date ? nextRecord : e))
+      : [...entries, nextRecord];
+    setEntries(nextEntries);
+    const ok = persistEntries(nextEntries);
+    return { ok, rideDetails: renumbered };
   };
 
   // entryStatus(編集中/入力済み)の切替専用。setFormと同時にformRef.currentも直接更新してから
@@ -1806,6 +1880,16 @@ export default function WorkLog() {
                 </div>
               </fieldset>
 
+              {isCurrentMode ? (
+                <button
+                  type="button"
+                  onClick={() => setRideDetailsPanelOpen(true)}
+                  className="w-full py-4 rounded-2xl border border-[#232A36] bg-[#181D25] text-[#FFD54A] text-[15px] font-medium active:bg-[#1F242C] transition-colors"
+                >
+                  営業明細を開く
+                </button>
+              ) : null}
+
               {!isLegacyMode ? (
                 <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-4">
                   <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter">営業効率</div>
@@ -2284,6 +2368,16 @@ export default function WorkLog() {
         </div>
       </div>
 
+      {/* 営業明細パネル(current期間のみ、選択中の日付専用) */}
+      <RideDetailsPanel
+        open={rideDetailsPanelOpen}
+        onClose={() => setRideDetailsPanelOpen(false)}
+        dateLabel={`${m}/${d} (${wd})`}
+        rideDetails={form.rideDetails}
+        locked={isEntryLocked}
+        onSave={saveRideDetails}
+      />
+
       {/* Delete confirm */}
       {confirmDeleteId && (
         <div
@@ -2504,5 +2598,283 @@ function TimeSelect({ value, onChange, options, disabled = false, className }) {
         </option>
       ))}
     </select>
+  );
+}
+
+// 営業明細(rideDetails)パネル。current期間のDAILY LOG画面から開くボトムシート。
+// 既存の削除確認・復元確認ダイアログと同じ「暗色背景+下から出るシート」の見た目に合わせている。
+// 一覧・追加・編集・削除はすべてこのコンポーネント内で完結し、保存は親から渡されるonSave(=saveRideDetails)
+// を通じてentry.rideDetailsだけを書き換える(DAILY LOG本体のバリデーションには依存しない)。
+function RideDetailsPanel({ open, onClose, dateLabel, rideDetails, locked, onSave }) {
+  const [mode, setMode] = useState("list"); // "list" | "form"
+  const [editingId, setEditingId] = useState(null); // nullは新規追加
+  const [draft, setDraft] = useState(emptyRideDetail());
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+
+  useEffect(() => {
+    if (!open) {
+      setMode("list");
+      setEditingId(null);
+      setConfirmDeleteId(null);
+    }
+  }, [open]);
+
+  // パネルを開いたまま入力済みになった場合、編集フォームを表示したままにしない(閲覧のみへ戻す)。
+  useEffect(() => {
+    if (locked && mode === "form") {
+      setMode("list");
+      setEditingId(null);
+    }
+  }, [locked, mode]);
+
+  if (!open) return null;
+
+  const list = Array.isArray(rideDetails) ? rideDetails : [];
+
+  const startAdd = () => {
+    setDraft(emptyRideDetail());
+    setEditingId(null);
+    setMode("form");
+  };
+  const startEdit = (item) => {
+    setDraft({ ...emptyRideDetail(), ...item });
+    setEditingId(item.id);
+    setMode("form");
+  };
+  const cancelForm = () => {
+    setMode("list");
+    setEditingId(null);
+  };
+  const submitForm = () => {
+    const amountValue = draft.amount === "" || draft.amount === null ? "" : Number(draft.amount);
+    const normalizedAmount = draft.amount === "" || draft.amount === null || Number.isNaN(amountValue) ? "" : amountValue;
+    if (editingId) {
+      // 編集時は既存のidをそのまま維持する(新しいidを作り直さない)。
+      const next = list.map((item) =>
+        item.id === editingId ? { ...item, ...draft, amount: normalizedAmount, id: editingId } : item
+      );
+      onSave(next);
+    } else {
+      const newItem = {
+        ...draft,
+        amount: normalizedAmount,
+        id: `ride-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      };
+      onSave([...list, newItem]);
+    }
+    setMode("list");
+    setEditingId(null);
+  };
+  const confirmDelete = () => {
+    const next = list.filter((item) => item.id !== confirmDeleteId);
+    onSave(next);
+    setConfirmDeleteId(null);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-end justify-center z-30" onClick={onClose}>
+      <div
+        className="bg-[#1B2029] border border-[#2A3140] rounded-t-2xl w-full max-w-[560px] max-h-[85vh] overflow-y-auto p-5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-1">
+          <span className="font-display font-bold text-[15px]">営業明細 {dateLabel}</span>
+          <button onClick={onClose} className="text-[#7C8496]" aria-label="閉じる">
+            <X size={18} />
+          </button>
+        </div>
+        {locked ? (
+          <div className="text-[12px] text-[#FFD54A] mb-3">入力済みのため編集できません（閲覧のみ）</div>
+        ) : (
+          <div className="mb-3" />
+        )}
+
+        {mode === "list" ? (
+          <div className="space-y-3">
+            {list.length === 0 ? (
+              <div className="text-[13px] text-[#7C8496] py-6 text-center">まだ営業明細がありません</div>
+            ) : (
+              <div className="space-y-2">
+                {list.map((item) => (
+                  <div key={item.id} className="rounded-xl border border-[#232A36] bg-[#181D25] p-3">
+                    <button
+                      type="button"
+                      onClick={() => startEdit(item)}
+                      disabled={locked}
+                      className="w-full text-left disabled:opacity-90"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] text-[#7C8496] font-meter">No.{item.number}</span>
+                        <span className="text-[13px] font-meter font-medium text-[#FFD54A]">
+                          {item.amount !== "" && item.amount !== null && item.amount !== undefined && !Number.isNaN(Number(item.amount))
+                            ? `¥${yen(item.amount)}`
+                            : "—"}
+                        </span>
+                      </div>
+                      <div className="text-[13px] text-[#EDEFF3] mt-1 font-meter">
+                        {item.pickupTime || "--:--"} → {item.dropoffTime || "--:--"}
+                      </div>
+                      <div className="text-[12px] text-[#7C8496] mt-0.5 break-all">
+                        {item.pickupLocation || "（乗車場所未入力）"} → {item.dropoffLocation || "（降車場所未入力）"}
+                      </div>
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <span className="text-[11px] rounded-full border border-[#2A3140] px-2 py-0.5 text-[#8B93A1]">
+                          {RIDE_TYPE_LABEL[item.rideType] || "一般"}
+                        </span>
+                        {item.favorite ? <span className="text-[11px] text-[#FFD54A]">★ お気に入り</span> : null}
+                      </div>
+                      {item.note ? <div className="text-[12px] text-[#7C8496] mt-1 break-all">{item.note}</div> : null}
+                    </button>
+                    {!locked ? (
+                      <div className="flex justify-end mt-2">
+                        <button
+                          onClick={() => setConfirmDeleteId(item.id)}
+                          className="text-[#7C8496] active:text-[#FF6B57] transition-colors"
+                          aria-label="この営業明細を削除"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            )}
+            {!locked ? (
+              <button
+                type="button"
+                onClick={startAdd}
+                className="w-full py-3 rounded-lg border border-dashed border-[#FFD54A]/50 text-[#FFD54A] text-sm font-medium active:bg-[#FFD54A]/10"
+              >
+                ＋ 明細を追加
+              </button>
+            ) : null}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="乗車時間">
+                <input
+                  type="time"
+                  value={draft.pickupTime}
+                  onChange={(e) => setDraft((d) => ({ ...d, pickupTime: e.target.value }))}
+                  className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-4 text-lg font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFD54A]"
+                />
+              </Field>
+              <Field label="降車時間">
+                <input
+                  type="time"
+                  value={draft.dropoffTime}
+                  onChange={(e) => setDraft((d) => ({ ...d, dropoffTime: e.target.value }))}
+                  className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-4 text-lg font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFD54A]"
+                />
+              </Field>
+            </div>
+            <Field label="乗車場所">
+              <input
+                type="text"
+                value={draft.pickupLocation}
+                onChange={(e) => setDraft((d) => ({ ...d, pickupLocation: e.target.value }))}
+                placeholder="自由入力"
+                className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-3 text-[15px] text-[#EDEFF3] focus:outline-none focus:border-[#FFD54A]"
+              />
+            </Field>
+            <Field label="降車場所">
+              <input
+                type="text"
+                value={draft.dropoffLocation}
+                onChange={(e) => setDraft((d) => ({ ...d, dropoffLocation: e.target.value }))}
+                placeholder="自由入力"
+                className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-3 text-[15px] text-[#EDEFF3] focus:outline-none focus:border-[#FFD54A]"
+              />
+            </Field>
+            <Field label="金額">
+              <YenInput value={draft.amount} onChange={(v) => setDraft((d) => ({ ...d, amount: v }))} />
+            </Field>
+            <Field label="乗車種別">
+              <div className="flex gap-2">
+                {RIDE_TYPE_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setDraft((d) => ({ ...d, rideType: opt.value }))}
+                    className={`flex-1 rounded-lg border px-3 py-2 text-sm transition-colors ${
+                      draft.rideType === opt.value ? "border-[#FFD54A] bg-[#FFD54A]/10 text-[#FFD54A]" : "border-[#2A3140] text-[#8B93A1]"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </Field>
+            <Field label="お気に入り乗車">
+              <button
+                type="button"
+                onClick={() => setDraft((d) => ({ ...d, favorite: !d.favorite }))}
+                className={`flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition-colors ${
+                  draft.favorite ? "border-[#FFD54A] bg-[#FFD54A]/10 text-[#FFD54A]" : "border-[#2A3140] text-[#8B93A1]"
+                }`}
+              >
+                <span
+                  className={`flex h-4 w-4 items-center justify-center rounded border ${
+                    draft.favorite ? "border-[#FFD54A] bg-[#FFD54A] text-[#12151A]" : "border-[#8B93A1]"
+                  }`}
+                >
+                  {draft.favorite ? "✓" : ""}
+                </span>
+                お気に入り
+              </button>
+            </Field>
+            <Field label="備考">
+              <textarea
+                value={draft.note}
+                onChange={(e) => setDraft((d) => ({ ...d, note: e.target.value }))}
+                rows={2}
+                className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-3 text-[15px] text-[#EDEFF3] focus:outline-none focus:border-[#FFD54A] resize-none"
+              />
+            </Field>
+            <div className="flex gap-2 pt-1">
+              <button onClick={cancelForm} className="flex-1 py-3 rounded-lg border border-[#2A3140] text-[#EDEFF3]">
+                キャンセル
+              </button>
+              <button onClick={submitForm} className="flex-1 py-3 rounded-lg bg-[#FFD54A] text-[#12151A] font-medium">
+                {editingId ? "更新する" : "追加する"}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {confirmDeleteId && (
+        <div
+          className="fixed inset-0 bg-black/60 flex items-end justify-center z-40"
+          onClick={() => setConfirmDeleteId(null)}
+        >
+          <div
+            className="bg-[#1B2029] border border-[#2A3140] rounded-t-2xl w-full max-w-[560px] p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <span className="font-display font-bold text-[15px]">この営業明細を削除しますか？</span>
+              <button onClick={() => setConfirmDeleteId(null)} className="text-[#7C8496]">
+                <X size={18} />
+              </button>
+            </div>
+            <p className="text-[13px] text-[#7C8496] mb-4">削除すると元に戻せません。</p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setConfirmDeleteId(null)}
+                className="flex-1 py-3 rounded-lg border border-[#2A3140] text-[#EDEFF3]"
+              >
+                キャンセル
+              </button>
+              <button onClick={confirmDelete} className="flex-1 py-3 rounded-lg bg-[#FF6B57] text-[#12151A] font-medium">
+                削除する
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
