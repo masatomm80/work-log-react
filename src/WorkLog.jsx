@@ -717,6 +717,8 @@ export default function WorkLog() {
   const [selectedLogDate, setSelectedLogDate] = useState(null);
   // 営業明細パネル(RideDetailsPanel)の開閉状態。選択中の日付専用のパネルなので、日付が変わったら閉じる。
   const [rideDetailsPanelOpen, setRideDetailsPanelOpen] = useState(false);
+  // DAILY LOG内の営業明細クイック入力欄(current期間のみ)。追加専用の下書き状態で、rideDetails自体には含まれない。
+  const [quickRideDraft, setQuickRideDraft] = useState(emptyRideDetail());
   // CSV書き出しの対象期間。初期値は現在開いている月度(既存のgetPeriodRangeを利用)。
   const [csvStartDate, setCsvStartDate] = useState(() => getPeriodRange(selectedDate).start);
   const [csvEndDate, setCsvEndDate] = useState(() => getPeriodRange(selectedDate).end);
@@ -763,6 +765,11 @@ export default function WorkLog() {
   // 日付が変わったら営業明細パネルも閉じる(別日のパネルが開いたままにならないようにする)。
   useEffect(() => {
     setRideDetailsPanelOpen(false);
+  }, [selectedDate]);
+
+  // 日付が変わったら営業明細クイック入力欄も新規入力状態へリセットする(別日の下書きを持ち越さない)。
+  useEffect(() => {
+    setQuickRideDraft(emptyRideDetail());
   }, [selectedDate]);
 
   // 日付が切り替わったら(MONTHLY LOGからのジャンプを含むすべての日付変更で)、詳細画面を最上部から表示する。
@@ -937,6 +944,25 @@ export default function WorkLog() {
     setEntries(nextEntries);
     const ok = persistEntries(nextEntries);
     return { ok, rideDetails: renumbered };
+  };
+
+  // DAILY LOG内の営業明細クイック入力欄「＋明細を追加」。RideDetailsPanelの追加処理と同じく、
+  // 既存rideDetails配列に1件追加してsaveRideDetailsへ渡すだけで、保存経路(id採番・番号振り直し・
+  // flush・専用保存)は共通のsaveRideDetailsをそのまま再利用する(保存ロジックの二重実装はしない)。
+  const handleQuickAddRideDetail = () => {
+    const list = Array.isArray(form.rideDetails) ? form.rideDetails : [];
+    const amountValue = quickRideDraft.amount === "" || quickRideDraft.amount === null ? "" : Number(quickRideDraft.amount);
+    const normalizedAmount =
+      quickRideDraft.amount === "" || quickRideDraft.amount === null || Number.isNaN(amountValue) ? "" : amountValue;
+    const newItem = {
+      ...quickRideDraft,
+      amount: normalizedAmount,
+      id: `ride-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    };
+    const result = saveRideDetails([...list, newItem]);
+    if (result.ok) {
+      setQuickRideDraft(emptyRideDetail());
+    }
   };
 
   // entryStatus(編集中/入力済み)の切替専用。setFormと同時にformRef.currentも直接更新してから
@@ -1817,6 +1843,115 @@ export default function WorkLog() {
                 </Field>
               ) : null}
 
+              {isCurrentMode ? (
+                <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-3">
+                  <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter">営業明細入力</div>
+                  <fieldset
+                    disabled={isEntryLocked}
+                    className={`space-y-3 border-0 p-0 m-0${isEntryLocked ? " opacity-80" : ""}`}
+                  >
+                    <div className="grid grid-cols-2 gap-3">
+                      <Field label="乗車時間">
+                        <input
+                          type="time"
+                          value={quickRideDraft.pickupTime}
+                          onChange={(e) => setQuickRideDraft((d) => ({ ...d, pickupTime: e.target.value }))}
+                          className="w-full bg-[#181D25] border border-[#232A36] rounded-lg px-3 py-2.5 text-base font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFD54A] disabled:opacity-60"
+                        />
+                      </Field>
+                      <Field label="降車時間">
+                        <input
+                          type="time"
+                          value={quickRideDraft.dropoffTime}
+                          onChange={(e) => setQuickRideDraft((d) => ({ ...d, dropoffTime: e.target.value }))}
+                          className="w-full bg-[#181D25] border border-[#232A36] rounded-lg px-3 py-2.5 text-base font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFD54A] disabled:opacity-60"
+                        />
+                      </Field>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <Field label="乗車場所">
+                        <input
+                          type="text"
+                          value={quickRideDraft.pickupLocation}
+                          onChange={(e) => setQuickRideDraft((d) => ({ ...d, pickupLocation: e.target.value }))}
+                          placeholder="自由入力"
+                          className="w-full bg-[#181D25] border border-[#232A36] rounded-lg px-3 py-2.5 text-[14px] text-[#EDEFF3] focus:outline-none focus:border-[#FFD54A] disabled:opacity-60"
+                        />
+                      </Field>
+                      <Field label="降車場所">
+                        <input
+                          type="text"
+                          value={quickRideDraft.dropoffLocation}
+                          onChange={(e) => setQuickRideDraft((d) => ({ ...d, dropoffLocation: e.target.value }))}
+                          placeholder="自由入力"
+                          className="w-full bg-[#181D25] border border-[#232A36] rounded-lg px-3 py-2.5 text-[14px] text-[#EDEFF3] focus:outline-none focus:border-[#FFD54A] disabled:opacity-60"
+                        />
+                      </Field>
+                    </div>
+                    <Field label="金額">
+                      <YenInput value={quickRideDraft.amount} onChange={(v) => setQuickRideDraft((d) => ({ ...d, amount: v }))} />
+                    </Field>
+                    <Field label="乗車種別">
+                      <div className="flex gap-2">
+                        {RIDE_TYPE_OPTIONS.map((opt) => (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => setQuickRideDraft((d) => ({ ...d, rideType: opt.value }))}
+                            className={`flex-1 rounded-lg border px-3 py-2 text-sm transition-colors ${
+                              quickRideDraft.rideType === opt.value
+                                ? "border-[#FFD54A] bg-[#FFD54A]/10 text-[#FFD54A]"
+                                : "border-[#2A3140] text-[#8B93A1]"
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </Field>
+                    <div className="grid grid-cols-2 gap-3">
+                      <Field label="お気に入り">
+                        <button
+                          type="button"
+                          onClick={() => setQuickRideDraft((d) => ({ ...d, favorite: !d.favorite }))}
+                          className={`w-full flex items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm transition-colors ${
+                            quickRideDraft.favorite ? "border-[#FFD54A] bg-[#FFD54A]/10 text-[#FFD54A]" : "border-[#2A3140] text-[#8B93A1]"
+                          }`}
+                        >
+                          <span
+                            className={`flex h-4 w-4 items-center justify-center rounded border ${
+                              quickRideDraft.favorite ? "border-[#FFD54A] bg-[#FFD54A] text-[#12151A]" : "border-[#8B93A1]"
+                            }`}
+                          >
+                            {quickRideDraft.favorite ? "✓" : ""}
+                          </span>
+                          お気に入り
+                        </button>
+                      </Field>
+                      <Field label="備考">
+                        <input
+                          type="text"
+                          value={quickRideDraft.note}
+                          onChange={(e) => setQuickRideDraft((d) => ({ ...d, note: e.target.value }))}
+                          placeholder="任意"
+                          className="w-full bg-[#181D25] border border-[#232A36] rounded-lg px-3 py-2.5 text-[14px] text-[#EDEFF3] focus:outline-none focus:border-[#FFD54A] disabled:opacity-60"
+                        />
+                      </Field>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleQuickAddRideDetail}
+                      className="w-full py-3 rounded-lg border border-dashed border-[#FFD54A]/50 text-[#FFD54A] text-sm font-medium active:bg-[#FFD54A]/10 disabled:opacity-40"
+                    >
+                      ＋ 明細を追加
+                    </button>
+                  </fieldset>
+                  {isEntryLocked ? (
+                    <div className="text-[12px] text-[#FFD54A]">入力済みのため営業明細を追加できません</div>
+                  ) : null}
+                </div>
+              ) : null}
+
               <fieldset
                 disabled={isEntryLocked}
                 className={`rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-4${isEntryLocked ? " opacity-80" : ""}`}
@@ -1896,7 +2031,7 @@ export default function WorkLog() {
                 <button
                   type="button"
                   onClick={() => setRideDetailsPanelOpen(true)}
-                  className="w-full py-4 rounded-2xl border border-[#232A36] bg-[#181D25] text-[#FFD54A] text-[15px] font-medium active:bg-[#1F242C] transition-colors"
+                  className="w-full py-4 rounded-2xl border border-transparent bg-[#FFD54A] text-[#12151A] text-[15px] font-semibold hover:bg-[#E6C043] active:bg-[#E6C043] transition-colors"
                 >
                   営業明細を開く
                 </button>
