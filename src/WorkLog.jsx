@@ -300,6 +300,9 @@ function getComparableFormData(record) {
     notes: record.notes ?? "",
     sales: record.sales ?? "",
     salesExtra: record.salesExtra ?? "",
+    sales12: record.sales12 ?? "",
+    sales18: record.sales18 ?? "",
+    sales24: record.sales24 ?? "",
     tip: record.tip ?? "",
     count: record.count ?? "",
     handRaisedCount: record.handRaisedCount ?? "",
@@ -346,6 +349,32 @@ function formatAveragePrice(sales, count) {
   const average = Math.round(salesValue / countValue);
   if (!Number.isFinite(average)) return "--";
   return `¥${average.toLocaleString("ja-JP")}`;
+}
+// 時間帯別売上(TIME SLOT SALES)。sales12/18/24は「その時点までの累計売上(メーターのみ、概算可)」で、
+// 区分ごとの売上は隣り合う累計の差額として都度算出する(保存はしない)。どちらかの累計が未入力、または
+// 差額が負(入力ミスで前の時点より減っている)の場合は、推測で埋めずnullを返して「—」表示にする。
+// 区分④は既存のDAILY LOG売上(form.sales、メーター外は含まない)を最終累計として使う。
+function toCumulativeNumber(value) {
+  if (value === "" || value === null || value === undefined) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+function diffCumulative(end, start) {
+  if (end === null || start === null) return null;
+  const diff = end - start;
+  return diff < 0 ? null : diff;
+}
+function computeTimeSlotSales(form) {
+  const s12 = toCumulativeNumber(form.sales12);
+  const s18 = toCumulativeNumber(form.sales18);
+  const s24 = toCumulativeNumber(form.sales24);
+  const sFinal = toCumulativeNumber(form.sales);
+  return {
+    seg1: diffCumulative(s12, 0),
+    seg2: diffCumulative(s18, s12),
+    seg3: diffCumulative(s24, s18),
+    seg4: diffCumulative(sFinal, s24),
+  };
 }
 function formatDistanceValue(value) {
   if (value === "" || value === null || value === undefined) return "--";
@@ -542,6 +571,9 @@ const emptyForm = (date) => ({
   date,
   sales: "",
   salesExtra: "",
+  sales12: "",
+  sales18: "",
+  sales24: "",
   tip: "",
   count: "",
   handRaisedCount: "",
@@ -1329,6 +1361,24 @@ export default function WorkLog() {
       ? "営業距離は走行距離を超えません。"
       : "";
   const companyRadioCountDisplay = Math.max((Number(form.count) || 0) - (Number(form.handRaisedCount) || 0) - (Number(form.appRideCount) || 0), 0);
+  // 時間帯別売上(TIME SLOT SALES)。保存はsales12/sales18/sales24をそのまま(他フィールドと同じ自動保存経路で)
+  // 行い、区分ごとの売上はここで表示用に都度算出するだけで、別フィールドとしては保存しない。
+  const timeSlotSales = useMemo(
+    () => computeTimeSlotSales(form),
+    [form.sales12, form.sales18, form.sales24, form.sales]
+  );
+  const sales18ReversalWarning =
+    form.sales12 !== "" && form.sales18 !== "" && Number(form.sales18) < Number(form.sales12)
+      ? "18時の累計が12時より少なくなっています。入力をご確認ください。"
+      : "";
+  const sales24ReversalWarning =
+    form.sales18 !== "" && form.sales24 !== "" && Number(form.sales24) < Number(form.sales18)
+      ? "24時の累計が18時より少なくなっています。入力をご確認ください。"
+      : "";
+  const salesFinalReversalWarning =
+    form.sales24 !== "" && form.sales !== "" && Number(form.sales) < Number(form.sales24)
+      ? "勤務終了時点の売上（既存の売上欄）が24時の累計より少なくなっています。入力をご確認ください。"
+      : "";
 
   const setDateStatus = (status, holidayType = null) => {
     setForm((f) => {
@@ -1729,6 +1779,51 @@ export default function WorkLog() {
                     className="w-full bg-[#181D25] border border-[#232A36] rounded-xl px-4 py-4 text-[17px] text-[#EDEFF3] focus:outline-none focus:border-[#FFD54A] resize-none disabled:opacity-70"
                   />
                 </Field>
+              ) : null}
+
+              {isCurrentMode ? (
+                <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-4">
+                  <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter">
+                    時間帯別売上 <span className="text-[#4B5363]">TIME SLOT SALES</span>
+                  </div>
+                  <fieldset
+                    disabled={isEntryLocked}
+                    className={`space-y-3 border-0 p-0 m-0${isEntryLocked ? " opacity-80" : ""}`}
+                  >
+                    <div className="grid grid-cols-3 gap-2">
+                      <Field label="12:00 累計">
+                        <YenInput compact value={form.sales12} onChange={(v) => updateField("sales12", v)} />
+                      </Field>
+                      <Field label="18:00 累計" warning={sales18ReversalWarning}>
+                        <YenInput compact value={form.sales18} onChange={(v) => updateField("sales18", v)} />
+                      </Field>
+                      <Field label="24:00 累計" warning={sales24ReversalWarning}>
+                        <YenInput compact value={form.sales24} onChange={(v) => updateField("sales24", v)} />
+                      </Field>
+                    </div>
+                    <p className="text-[11px] text-[#7C8496] leading-relaxed">
+                      その時点までの累計売上（メーターのみ）を入力。100円・1,000円単位の概算で構いません。未入力の時間帯は「—」として扱い、0円では計算しません。
+                    </p>
+                  </fieldset>
+                  <div className="rounded-xl border border-[#232A36] bg-[#171C24] divide-y divide-[#232A36]">
+                    {[
+                      ["始業〜12:00", timeSlotSales.seg1],
+                      ["12:00〜18:00", timeSlotSales.seg2],
+                      ["18:00〜24:00", timeSlotSales.seg3],
+                      ["24:00〜終了", timeSlotSales.seg4],
+                    ].map(([label, val]) => (
+                      <div key={label} className="flex items-center justify-between px-3 py-2.5">
+                        <span className="text-[12px] text-[#8B93A1]">{label}</span>
+                        <span className="font-meter text-[14px] font-medium text-[#EDEFF3]">
+                          {val === null ? "—" : `¥${yen(val)}`}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  {salesFinalReversalWarning ? (
+                    <div className="text-[12px] text-[#FF6B57]">{salesFinalReversalWarning}</div>
+                  ) : null}
+                </div>
               ) : null}
 
               <fieldset
@@ -2450,10 +2545,18 @@ function Field({ label, children, helperText, warning }) {
   );
 }
 
-function YenInput({ value, onChange, disabled = false }) {
+function YenInput({ value, onChange, disabled = false, compact = false }) {
   return (
     <div className="relative">
-      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[#7C8496] font-meter text-lg">¥</span>
+      <span
+        className={
+          compact
+            ? "absolute left-3 top-1/2 -translate-y-1/2 text-[#7C8496] font-meter text-sm"
+            : "absolute left-4 top-1/2 -translate-y-1/2 text-[#7C8496] font-meter text-lg"
+        }
+      >
+        ¥
+      </span>
       <input
         type="number"
         inputMode="numeric"
@@ -2461,7 +2564,11 @@ function YenInput({ value, onChange, disabled = false }) {
         onChange={(e) => onChange(e.target.value)}
         placeholder="0"
         disabled={disabled}
-        className="w-full bg-[#181D25] border border-[#232A36] rounded-xl pl-9 pr-4 py-5 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFD54A] disabled:opacity-60"
+        className={
+          compact
+            ? "w-full bg-[#181D25] border border-[#232A36] rounded-lg pl-7 pr-2 py-2.5 text-sm font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFD54A] disabled:opacity-60"
+            : "w-full bg-[#181D25] border border-[#232A36] rounded-xl pl-9 pr-4 py-5 text-xl font-meter text-[#EDEFF3] focus:outline-none focus:border-[#FFD54A] disabled:opacity-60"
+        }
       />
     </div>
   );
