@@ -41,6 +41,10 @@ const WEATHER_OPTIONS = [
 const WEEKDAY_JA = ["日", "月", "火", "水", "木", "金", "土"];
 const FIRST_WORKDAY = "2024-12-22";
 const HOLIDAY_AUTO_CYCLE_START = "2026-07-21";
+// 時間帯別売上(TIME SLOT SALES)カードの表示開始日。日報の対象日(selectedDate)で判定し、
+// 実行時の現在日時では判定しない。この日より前の対象日では、既に入力済みのsales12/18/24・
+// salesExtra12/18/24データがあってもカード自体を表示しない(データは削除しない)。
+const TIME_SLOT_SALES_START_DATE = "2026-10-28";
 const DAY_STATUS = {
   WORKDAY: "workday",
   DAYOFF: "dayoff",
@@ -742,6 +746,8 @@ export default function WorkLog() {
   const activeRecordFormat = getRecordFormatFromDate(selectedDate);
   const isLegacyMode = activeRecordFormat === "legacy";
   const isCurrentMode = activeRecordFormat === "current";
+  // 時間帯別売上カードの表示判定。日報の対象日(selectedDate)で判定し、現在の日付(todayISO())は使わない。
+  const isTimeSlotSalesVisible = selectedDate >= TIME_SLOT_SALES_START_DATE;
 
   useEffect(() => {
     const existing = entries.find((e) => e.date === selectedDate);
@@ -1819,7 +1825,7 @@ export default function WorkLog() {
                 </Field>
               ) : null}
 
-              {isCurrentMode ? (
+              {isCurrentMode && isTimeSlotSalesVisible ? (
                 <div className="rounded-2xl border border-[#232A36] bg-[#181D25] p-4 space-y-4">
                   <div className="text-[11px] tracking-[0.2em] text-[#7C8496] font-meter">
                     時間帯別売上 <span className="text-[#4B5363]">TIME SLOT SALES</span>
