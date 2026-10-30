@@ -303,6 +303,9 @@ function getComparableFormData(record) {
     sales12: record.sales12 ?? "",
     sales18: record.sales18 ?? "",
     sales24: record.sales24 ?? "",
+    salesExtra12: record.salesExtra12 ?? "",
+    salesExtra18: record.salesExtra18 ?? "",
+    salesExtra24: record.salesExtra24 ?? "",
     tip: record.tip ?? "",
     count: record.count ?? "",
     handRaisedCount: record.handRaisedCount ?? "",
@@ -374,6 +377,21 @@ function computeTimeSlotSales(form) {
     seg2: diffCumulative(s18, s12),
     seg3: diffCumulative(s24, s18),
     seg4: diffCumulative(sFinal, s24),
+  };
+}
+// メーター外売上版の時間帯別売上。salesExtra12/18/24は「その時点までの累計メーター外売上」で、
+// 区分④は既存のDAILY LOGメーター外売上(form.salesExtra)を最終累計として使う。計算方法・未入力/
+// 逆転時の扱いはcomputeTimeSlotSales(メーター)と同じロジックを共有する。
+function computeTimeSlotSalesExtra(form) {
+  const e12 = toCumulativeNumber(form.salesExtra12);
+  const e18 = toCumulativeNumber(form.salesExtra18);
+  const e24 = toCumulativeNumber(form.salesExtra24);
+  const eFinal = toCumulativeNumber(form.salesExtra);
+  return {
+    seg1: diffCumulative(e12, 0),
+    seg2: diffCumulative(e18, e12),
+    seg3: diffCumulative(e24, e18),
+    seg4: diffCumulative(eFinal, e24),
   };
 }
 function formatDistanceValue(value) {
@@ -574,6 +592,9 @@ const emptyForm = (date) => ({
   sales12: "",
   sales18: "",
   sales24: "",
+  salesExtra12: "",
+  salesExtra18: "",
+  salesExtra24: "",
   tip: "",
   count: "",
   handRaisedCount: "",
@@ -1379,6 +1400,23 @@ export default function WorkLog() {
     form.sales24 !== "" && form.sales !== "" && Number(form.sales) < Number(form.sales24)
       ? "勤務終了時点の売上（既存の売上欄）が24時の累計より少なくなっています。入力をご確認ください。"
       : "";
+  // メーター外売上版の時間帯別売上。保存先はsalesExtra12/18/24(メーター版sales12/18/24と同じ自動保存経路)。
+  const timeSlotSalesExtra = useMemo(
+    () => computeTimeSlotSalesExtra(form),
+    [form.salesExtra12, form.salesExtra18, form.salesExtra24, form.salesExtra]
+  );
+  const salesExtra18ReversalWarning =
+    form.salesExtra12 !== "" && form.salesExtra18 !== "" && Number(form.salesExtra18) < Number(form.salesExtra12)
+      ? "メーター外 18時の累計が12時より少なくなっています。入力をご確認ください。"
+      : "";
+  const salesExtra24ReversalWarning =
+    form.salesExtra18 !== "" && form.salesExtra24 !== "" && Number(form.salesExtra24) < Number(form.salesExtra18)
+      ? "メーター外 24時の累計が18時より少なくなっています。入力をご確認ください。"
+      : "";
+  const salesExtraFinalReversalWarning =
+    form.salesExtra24 !== "" && form.salesExtra !== "" && Number(form.salesExtra) < Number(form.salesExtra24)
+      ? "勤務終了時点のメーター外売上（既存のメーター外売上欄）が24時の累計より少なくなっています。入力をご確認ください。"
+      : "";
 
   const setDateStatus = (status, holidayType = null) => {
     setForm((f) => {
@@ -1801,27 +1839,51 @@ export default function WorkLog() {
                         <YenInput compact value={form.sales24} onChange={(v) => updateField("sales24", v)} />
                       </Field>
                     </div>
-                    <p className="text-[11px] text-[#7C8496] leading-relaxed">
-                      その時点までの累計売上（メーターのみ）を入力。100円・1,000円単位の概算で構いません。未入力の時間帯は「—」として扱い、0円では計算しません。
-                    </p>
+                    <div className="text-[10px] text-[#5C6473] tracking-wide">メーター外</div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <Field label="12:00 累計">
+                        <YenInput compact value={form.salesExtra12} onChange={(v) => updateField("salesExtra12", v)} />
+                      </Field>
+                      <Field label="18:00 累計" warning={salesExtra18ReversalWarning}>
+                        <YenInput compact value={form.salesExtra18} onChange={(v) => updateField("salesExtra18", v)} />
+                      </Field>
+                      <Field label="24:00 累計" warning={salesExtra24ReversalWarning}>
+                        <YenInput compact value={form.salesExtra24} onChange={(v) => updateField("salesExtra24", v)} />
+                      </Field>
+                    </div>
                   </fieldset>
                   <div className="rounded-xl border border-[#232A36] bg-[#171C24] divide-y divide-[#232A36]">
+                    <div className="flex items-center justify-between px-3 py-2 text-[10px] text-[#5C6473] tracking-wide">
+                      <span>区分</span>
+                      <div className="flex gap-4">
+                        <span className="min-w-[64px] text-right">メーター</span>
+                        <span className="min-w-[56px] text-right">メーター外</span>
+                      </div>
+                    </div>
                     {[
-                      ["始業〜12:00", timeSlotSales.seg1],
-                      ["12:00〜18:00", timeSlotSales.seg2],
-                      ["18:00〜24:00", timeSlotSales.seg3],
-                      ["24:00〜終了", timeSlotSales.seg4],
-                    ].map(([label, val]) => (
+                      ["始業〜12:00", timeSlotSales.seg1, timeSlotSalesExtra.seg1],
+                      ["12:00〜18:00", timeSlotSales.seg2, timeSlotSalesExtra.seg2],
+                      ["18:00〜24:00", timeSlotSales.seg3, timeSlotSalesExtra.seg3],
+                      ["24:00〜終了", timeSlotSales.seg4, timeSlotSalesExtra.seg4],
+                    ].map(([label, meterVal, extraVal]) => (
                       <div key={label} className="flex items-center justify-between px-3 py-2.5">
                         <span className="text-[12px] text-[#8B93A1]">{label}</span>
-                        <span className="font-meter text-[14px] font-medium text-[#EDEFF3]">
-                          {val === null ? "—" : `¥${yen(val)}`}
-                        </span>
+                        <div className="flex gap-4">
+                          <span className="min-w-[64px] text-right font-meter text-[14px] font-medium text-[#EDEFF3]">
+                            {meterVal === null ? "—" : `¥${yen(meterVal)}`}
+                          </span>
+                          <span className="min-w-[56px] text-right font-meter text-[12px] text-[#7C8496]">
+                            {extraVal === null ? "—" : `¥${yen(extraVal)}`}
+                          </span>
+                        </div>
                       </div>
                     ))}
                   </div>
                   {salesFinalReversalWarning ? (
                     <div className="text-[12px] text-[#FF6B57]">{salesFinalReversalWarning}</div>
+                  ) : null}
+                  {salesExtraFinalReversalWarning ? (
+                    <div className="text-[12px] text-[#FF6B57]">{salesExtraFinalReversalWarning}</div>
                   ) : null}
                 </div>
               ) : null}
